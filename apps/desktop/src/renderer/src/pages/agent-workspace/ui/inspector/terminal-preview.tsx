@@ -20,12 +20,17 @@ export function TerminalPreview(props: TerminalPreviewProps) {
       >
         <For each={props.lines}>
           {(line) => (
-            <div class="terminal-block">
-              <p><span>$</span> {line.command}</p>
-              <Show when={line.output}>
+            <details class="terminal-block">
+              <summary>
+                <span>$</span> {line.command}
+              </summary>
+              <Show
+                when={line.output}
+                fallback={<pre class={line.isError ? "terminal-error" : undefined}>(no output)</pre>}
+              >
                 <pre class={line.isError ? "terminal-error" : undefined}>{line.output}</pre>
               </Show>
-            </div>
+            </details>
           )}
         </For>
       </Show>

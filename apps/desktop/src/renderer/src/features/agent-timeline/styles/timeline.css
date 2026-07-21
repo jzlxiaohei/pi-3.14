@@ -29,8 +29,13 @@
 
 .at-message + .at-message,
 .at-message + .at-tool-call,
+.at-message + .at-tool-group,
 .at-tool-call + .at-message,
-.at-tool-call + .at-tool-call {
+.at-tool-group + .at-message,
+.at-tool-call + .at-tool-call,
+.at-tool-call + .at-tool-group,
+.at-tool-group + .at-tool-call,
+.at-tool-group + .at-tool-group {
   margin-top: 18px;
 }
 
@@ -127,12 +132,64 @@
   animation: at-caret 1s steps(2, start) infinite;
 }
 
-.at-tool-call {
+.at-tool-call,
+.at-tool-group {
   margin-left: 37px;
   padding: 10px 11px;
   border: 1px solid var(--at-border-subtle);
   border-radius: var(--at-radius-md);
   background: var(--at-surface-code);
+}
+
+.at-tool-group {
+  padding: 0;
+}
+
+.at-tool-group-toggle {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: var(--at-radius-md);
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.at-tool-group-toggle:hover {
+  background: color-mix(in srgb, var(--at-surface-muted) 70%, transparent);
+}
+
+.at-tool-group-toggle .at-tool-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--at-text-muted);
+}
+
+.at-tool-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.at-tool-group-body .at-tool-call {
+  margin-left: 0;
+}
+
+.at-activity {
+  margin: 4px 0 0 37px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--at-text-muted);
+  font-size: var(--text-2xs);
 }
 
 .at-tool-call[data-status="error"] {
@@ -335,33 +392,40 @@
 .at-composer-wrap {
   flex-shrink: 0;
   z-index: var(--z-sticky);
-  padding: 12px clamp(24px, 4vw, 56px) 10px;
+  padding: 10px clamp(24px, 4vw, 56px) 6px;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-panel-solid);
 }
 
 .at-composer {
-  min-height: 108px;
-  padding: 11px;
+  min-height: 118px;
+  padding: 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--surface-panel-solid);
-  box-shadow: var(--shadow-md), 0 0 0 5px rgba(0, 168, 240, .06);
+  box-shadow: var(--shadow-sm);
 }
 
 .at-composer:focus-within {
   border-color: var(--border-focus);
-  box-shadow: var(--shadow-md), var(--shadow-focus);
+  box-shadow: var(--shadow-focus);
 }
 
 .at-composer textarea {
   width: 100%;
-  height: 47px;
+  height: 64px;
   resize: none;
   padding: 2px 3px;
   color: var(--text-primary);
   background: transparent;
   font-size: var(--text-sm);
+  box-shadow: none;
+}
+
+.at-composer textarea:focus,
+.at-composer textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .at-composer textarea:disabled {
@@ -442,8 +506,8 @@
 }
 
 .at-composer-hint {
-  min-height: 14px;
-  margin: 9px 0 0;
+  min-height: 12px;
+  margin: 5px 0 0;
   display: flex;
   align-items: center;
   justify-content: center;

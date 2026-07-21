@@ -72,7 +72,7 @@ export function Composer(props: ComposerProps) {
         classList={{ "at-composer-hint--error": Boolean(props.errorMessage) && !props.streaming }}
       >
         <Show when={props.streaming}>
-          <LoaderCircle class="at-spin" size={12} /> Agent turn is running.
+          <LoaderCircle class="at-spin" size={12} /> Working…
         </Show>
         <Show when={!props.streaming && props.errorMessage}>
           {props.errorMessage}

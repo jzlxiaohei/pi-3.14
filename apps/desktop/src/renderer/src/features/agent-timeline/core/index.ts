@@ -8,6 +8,8 @@ export {
   reduceTimelineEvent,
 } from "./reduce";
 export { formatJson } from "./tool-summary";
+export { buildTimelineViewEntries, timelineActivityLabel } from "./view-items";
+export type { TimelineViewEntry } from "./view-items";
 export type {
   TimelineAssistantMessage,
   TimelineItem,

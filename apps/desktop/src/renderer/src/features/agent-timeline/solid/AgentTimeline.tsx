@@ -1,8 +1,10 @@
-import { Bot } from "lucide-solid";
-import { For, Show, createEffect } from "solid-js";
+import { Bot, LoaderCircle } from "lucide-solid";
+import { For, Show, createEffect, createMemo } from "solid-js";
 import type { TimelineItem, TimelineStatus } from "../core";
+import { buildTimelineViewEntries, timelineActivityLabel } from "../core/view-items";
 import { AssistantMessage } from "./AssistantMessage";
 import { ToolCallBlock } from "./ToolCallBlock";
+import { ToolCallGroup } from "./ToolCallGroup";
 import { UserMessage } from "./UserMessage";
 
 type AgentTimelineProps = {
@@ -15,6 +17,15 @@ type AgentTimelineProps = {
 
 export function AgentTimeline(props: AgentTimelineProps) {
   let scrollRef: HTMLElement | undefined;
+
+  const entries = createMemo(() =>
+    buildTimelineViewEntries(props.items, {
+      runStatus: props.status.runStatus,
+      pendingApprovalToolCallId: props.pendingApprovalToolCallId,
+    }),
+  );
+
+  const activity = createMemo(() => timelineActivityLabel(props.items, props.status.runStatus));
 
   createEffect(() => {
     // Track length + last item text so streaming deltas also keep the viewport pinned.
@@ -42,29 +53,31 @@ export function AgentTimeline(props: AgentTimelineProps) {
           </div>
         }
       >
-        <For each={visibleItems(props.items, props.status.runStatus)}>
-          {(item) =>
-            renderItem(item, {
+        <For each={entries()}>
+          {(entry) => {
+            if (entry.type === "tool_group") {
+              return <ToolCallGroup tools={entry.tools} />;
+            }
+            return renderItem(entry.item, {
               lastItemId: props.items.at(-1)?.id,
               runStatus: props.status.runStatus,
               pendingApprovalToolCallId: props.pendingApprovalToolCallId,
               onAllowApproval: props.onAllowApproval,
               onDenyApproval: props.onDenyApproval,
-            })
-          }
+            });
+          }}
         </For>
+        <Show when={activity()}>
+          {(label) => (
+            <p class="at-activity" aria-live="polite">
+              <LoaderCircle class="at-spin" size={13} />
+              {label()}
+            </p>
+          )}
+        </Show>
       </Show>
     </section>
   );
-}
-
-function visibleItems(items: TimelineItem[], runStatus: TimelineStatus["runStatus"]): TimelineItem[] {
-  return items.filter((item) => {
-    if (item.kind !== "assistant") return true;
-    if (item.text.trim().length > 0) return true;
-    // Keep the live thinking placeholder only while this turn is still streaming.
-    return runStatus === "streaming" && item.id === items.at(-1)?.id;
-  });
 }
 
 function renderItem(

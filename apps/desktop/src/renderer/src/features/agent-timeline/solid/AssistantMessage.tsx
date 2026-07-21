@@ -22,7 +22,9 @@ export function AssistantMessage(props: AssistantMessageProps) {
           <MarkdownView content={props.item.text} />
         </Show>
         <Show when={props.streaming && props.item.text.trim().length === 0}>
-          <p class="at-muted"><LoaderCircle class="at-spin" size={14} /> Thinking...</p>
+          <p class="at-muted">
+            <LoaderCircle class="at-spin" size={14} /> Waiting for model…
+          </p>
         </Show>
         <Show when={props.streaming && props.item.text.trim().length > 0}>
           <span class="at-caret" aria-label="Streaming response" />

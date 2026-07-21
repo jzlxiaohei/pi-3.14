@@ -110,13 +110,13 @@ export function applyTimelineSnapshot(
   };
 }
 
-/** Start a turn overlay: pending user + streaming status on an empty item list. */
+/** Start a turn overlay: pending user + empty assistant placeholder for loading UI. */
 export function beginTurnOverlay(
   state: TimelineState,
   text: string,
   at = Date.now(),
 ): TimelineState {
-  return appendUserMessage(
+  const withUser = appendUserMessage(
     {
       ...createInitialTimelineState(),
       hostState: state.hostState,
@@ -124,6 +124,8 @@ export function beginTurnOverlay(
     text,
     at,
   );
+  // Seed an empty assistant so the timeline shows Thinking… before the first token/tool.
+  return getOrCreateAssistant(withUser, at).state;
 }
 
 export function reduceTimelineEvent(state: TimelineState, event: PiHostEvent): TimelineState {

@@ -1,6 +1,8 @@
-# Pi 3.14 Desktop Template
+# PIE
 
-Reusable Electron + SolidJS + Orbit template for code-agent desktop interfaces.
+Electron + SolidJS + Orbit desktop app for personal code-agent workflows.
+
+Shared PI runtime packages live under `@pi-3.14/*`.
 
 ## Stack
 
@@ -53,7 +55,7 @@ src/renderer/src/
   styles/              tokens, base CSS, shared UI CSS, page CSS
 ```
 
-## Reusing The Template
+## Conventions
 
 1. Keep `shared/ui` as the only place that wraps Ark primitives.
 2. Keep product surfaces styled with Orbit tokens.

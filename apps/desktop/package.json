@@ -1,7 +1,7 @@
 {
-  "name": "@pi-3.14/desktop",
+  "name": "pie",
   "version": "0.1.0",
-  "description": "Reusable Electron + SolidJS + Orbit desktop app template.",
+  "description": "PIE — personal code agent desktop app.",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",

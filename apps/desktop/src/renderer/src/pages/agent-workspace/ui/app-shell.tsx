@@ -21,7 +21,7 @@ export function AppShell(props: AppShellProps) {
           <div class="titlebar-spacer" aria-hidden="true" />
           <div class="app-title">
             <Command size={17} strokeWidth={2.4} />
-            Pi 3.14 <span>— code agent workspace template</span>
+            PIE <span>— personal code agent workspace</span>
           </div>
           <div class="window-actions">
             <Button variant="secondary" onClick={props.model.toggleTheme}>

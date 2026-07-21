@@ -1,7 +1,8 @@
-# pi-3.14
+# PIE
 
-A focused TypeScript monorepo for reusable PI model contracts, runtime hosts,
-subagent orchestration, and session analysis.
+Personal code agent desktop app — habits, skills, workflows, and subagents in one place.
+
+Shared PI runtime packages publish under the `@pi-3.14` npm scope.
 
 ## Packages
 
@@ -12,7 +13,7 @@ subagent orchestration, and session analysis.
 
 ## Apps
 
-- `@pi-3.14/desktop` — reusable Electron + SolidJS + Orbit desktop template.
+- `pie` — Electron + SolidJS + Orbit desktop app.
 
 ## Development
 
@@ -26,7 +27,7 @@ pnpm build
 pnpm pack:dry-run
 ```
 
-Desktop template:
+Desktop app:
 
 ```sh
 pnpm desktop:dev

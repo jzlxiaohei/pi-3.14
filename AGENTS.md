@@ -1,3 +1,8 @@
+# Coding preferences
+
+- Avoid over-defensive programming. Handle inputs and states that can occur on normal product paths. Do not re-check invariants already guaranteed by the runtime, types, or trusted internal callers. Skip DevTools / tampered-request / handcrafted-type attack cases on the frontend. Add validation only for untrusted external input, permission boundaries, irreversible actions, or failures that would cause clear data loss.
+- Do not add tests by default while the product is still in early flux. Prefer typecheck and manual verification. Only add or update tests when explicitly asked, or when changing stable pure contract/parsing logic in `@pi-3.14/*` that can break silently.
+
 # Frontend constraints
 
 For all new or modified frontend work:

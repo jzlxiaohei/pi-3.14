@@ -12,7 +12,7 @@ function createMainWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 720,
-    title: "Pi 3.14",
+    title: "PIE",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition: { x: 16, y: 18 },
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#07111f" : "#edf5f9",

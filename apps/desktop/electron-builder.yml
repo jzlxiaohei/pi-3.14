@@ -1,5 +1,5 @@
-appId: io.pi314.desktop
-productName: Pi 3.14
+appId: app.pie.desktop
+productName: PIE
 directories:
   output: dist
   buildResources: build

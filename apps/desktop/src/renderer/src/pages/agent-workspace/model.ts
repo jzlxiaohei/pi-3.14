@@ -101,8 +101,16 @@ export function createWorkspaceModel() {
     },
     upsertTask(task: WorkspaceTask, select = true) {
       setTasks((current) => {
-        const without = current.filter((item) => item.id !== task.id);
-        return [task, ...without].sort((a, b) => b.updatedAt - a.updatedAt);
+        const index = current.findIndex((item) => item.id === task.id);
+        if (index < 0) {
+          return [task, ...current].sort((a, b) => b.updatedAt - a.updatedAt);
+        }
+        const prev = current[index]!;
+        const next = current.slice();
+        next[index] = task;
+        // Keep sidebar order stable when only selection/metadata refreshed.
+        if (prev.updatedAt === task.updatedAt) return next;
+        return next.sort((a, b) => b.updatedAt - a.updatedAt);
       });
       if (select) setSelectedTaskId(task.id);
     },

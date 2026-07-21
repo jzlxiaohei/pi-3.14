@@ -151,11 +151,15 @@ export class PiRuntimeManager {
     const state = await this.bindHost({ cwd: task.cwd, sessionPath });
     const timeline = await this.readTimelineSnapshot(state.sessionPath);
     const updated =
-      (await this.tasks.update(task.id, {
-        sessionPath: state.sessionPath,
-        sessionId: state.sessionId,
-        status: "idle",
-      })) ?? task;
+      (await this.tasks.update(
+        task.id,
+        {
+          sessionPath: state.sessionPath,
+          sessionId: state.sessionId,
+          status: "idle",
+        },
+        { touchUpdatedAt: false },
+      )) ?? task;
 
     this.activeTaskId = updated.id;
     this.cwd = updated.cwd;

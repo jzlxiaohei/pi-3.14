@@ -75,14 +75,18 @@ export class TaskStore {
   async update(
     id: string,
     patch: Partial<Pick<WorkspaceTask, "title" | "cwd" | "sessionPath" | "sessionId" | "status">>,
+    options: { touchUpdatedAt?: boolean } = {},
   ): Promise<WorkspaceTask | null> {
     await this.load();
     const index = this.data.tasks.findIndex((task) => task.id === id);
     if (index < 0) return null;
+    const prev = this.data.tasks[index]!;
+    // Selecting/activating a task must not reshuffle the sidebar (sorted by updatedAt).
+    const touchUpdatedAt = options.touchUpdatedAt !== false;
     const next = {
-      ...this.data.tasks[index]!,
+      ...prev,
       ...patch,
-      updatedAt: Date.now(),
+      updatedAt: touchUpdatedAt ? Date.now() : prev.updatedAt,
     };
     this.data.tasks[index] = next;
     await this.persist();

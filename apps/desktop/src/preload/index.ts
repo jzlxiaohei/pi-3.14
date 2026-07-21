@@ -14,7 +14,7 @@ import type {
   WorkspaceListRequest,
   WorkspaceListResult,
   WorkspaceTask,
-} from "../shared/pi-ipc";
+} from "../shared/desktop-contracts";
 
 export type DesktopAppInfo = {
   name: string;

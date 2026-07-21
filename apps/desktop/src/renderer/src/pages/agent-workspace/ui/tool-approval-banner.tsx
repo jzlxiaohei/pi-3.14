@@ -1,6 +1,6 @@
 import { ShieldAlert } from "lucide-solid";
 import { Show } from "solid-js";
-import type { PiToolApprovalRequest } from "../../../../../shared/pi-ipc";
+import type { PiToolApprovalRequest } from "../../../../../shared/desktop-contracts";
 import { Button } from "@/shared/ui/button";
 
 type ToolApprovalBannerProps = {

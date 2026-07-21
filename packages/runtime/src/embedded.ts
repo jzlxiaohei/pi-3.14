@@ -1,10 +1,4 @@
-import type {
-  JsonValue,
-  PiHostEvent,
-  PiHostState,
-  PiStopReason,
-  PiTurnResult,
-} from "@pi-3.14/model";
+import type { PiHostEvent, PiHostState, PiStopReason, PiTurnResult } from "@pi-3.14/model";
 import { toJsonValue } from "@pi-3.14/model";
 import {
   type AgentSession,
@@ -30,21 +24,24 @@ import {
 } from "./contracts.js";
 import { messageStopReason, messageText, projectPiEvent } from "./events.js";
 import { repairOrphanedToolCalls } from "./repair-orphaned-tools.js";
+import {
+  raceApproval,
+  toolNeedsApproval,
+  type PiToolApprovalHandler,
+} from "./tool-approval.js";
 
-export type PiToolApprovalRequest = {
-  toolCallId: string;
-  toolName: string;
-  args: JsonValue;
-};
-
-export type PiToolApprovalDecision = {
-  approved: boolean;
-  reason?: string;
-};
-
-export type PiToolApprovalHandler = (
-  request: PiToolApprovalRequest,
-) => Promise<PiToolApprovalDecision>;
+export type {
+  PiToolApprovalDecision,
+  PiToolApprovalHandler,
+  PiToolApprovalRequest,
+  SessionAutoApprove,
+} from "./tool-approval.js";
+export {
+  createSessionAutoApprove,
+  raceApproval,
+  toolNeedsApproval,
+} from "./tool-approval.js";
+export { repairOrphanedToolCalls } from "./repair-orphaned-tools.js";
 
 export interface EmbeddedPiHostOptions {
   cwd?: string;
@@ -297,11 +294,15 @@ function installToolApprovalGate(session: AgentSession, approve: PiToolApprovalH
       return { block: true, reason: "Aborted" };
     }
     try {
-      const decision = await raceApproval(approve, {
-        toolCallId: ctx.toolCall.id,
-        toolName: ctx.toolCall.name,
-        args: toJsonValue(ctx.args),
-      }, signal);
+      const decision = await raceApproval(
+        approve,
+        {
+          toolCallId: ctx.toolCall.id,
+          toolName: ctx.toolCall.name,
+          args: toJsonValue(ctx.args),
+        },
+        signal,
+      );
       if (decision.approved) return upstream;
       return { block: true, reason: decision.reason ?? "Denied by user" };
     } catch (error) {
@@ -311,53 +312,6 @@ function installToolApprovalGate(session: AgentSession, approve: PiToolApprovalH
       };
     }
   };
-}
-
-function raceApproval(
-  approve: PiToolApprovalHandler,
-  request: PiToolApprovalRequest,
-  signal?: AbortSignal,
-): Promise<PiToolApprovalDecision> {
-  if (!signal) return approve(request);
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      resolve({ approved: false, reason: "Aborted" });
-      return;
-    }
-    const onAbort = () => {
-      cleanup();
-      resolve({ approved: false, reason: "Aborted" });
-    };
-    const cleanup = () => signal.removeEventListener("abort", onAbort);
-    signal.addEventListener("abort", onAbort, { once: true });
-    void approve(request).then(
-      (decision) => {
-        cleanup();
-        resolve(decision);
-      },
-      (error) => {
-        cleanup();
-        reject(error);
-      },
-    );
-  });
-}
-
-function toolNeedsApproval(toolName: string): boolean {
-  switch (toolName) {
-    case "read":
-    case "Read":
-    case "ReadFile":
-    case "grep":
-    case "Grep":
-    case "glob":
-    case "Glob":
-    case "list":
-    case "ls":
-      return false;
-    default:
-      return true;
-  }
 }
 
 function lastAssistant(session: AgentSession): { text: string; stopReason?: PiStopReason } {

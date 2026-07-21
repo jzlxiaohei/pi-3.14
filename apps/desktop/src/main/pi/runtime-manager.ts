@@ -24,7 +24,7 @@ import type {
   PiToolApprovalRequest,
   PiWorkspacePickResult,
   WorkspaceTask,
-} from "../../shared/pi-ipc";
+} from "../../shared/desktop-contracts";
 import { projectSessionToTimeline } from "../../shared/project-timeline";
 import { TaskStore, taskStorePath } from "./task-store";
 
@@ -61,8 +61,6 @@ export class PiRuntimeManager {
   >();
   /** Latest approval still waiting on the UI (survives renderer HMR remounts). */
   private activeApprovalRequest: PiToolApprovalRequest | null = null;
-  /** After the user Allows once, auto-approve the rest of this host session. */
-  private sessionAutoApprove = false;
 
   constructor() {
     // Renderer → main: resolve the in-flight approval promise for the host bridge.
@@ -74,7 +72,6 @@ export class PiRuntimeManager {
       if (this.activeApprovalRequest?.id === reply.id) {
         this.activeApprovalRequest = null;
       }
-      if (reply.approved) this.sessionAutoApprove = true;
       pending.resolve(reply);
     });
   }
@@ -101,7 +98,6 @@ export class PiRuntimeManager {
 
     this.subscribedWebContents = sender;
     this.cwd = cwd;
-    this.sessionAutoApprove = false;
 
     const sessionPath =
       options.sessionPath && (await fileExists(options.sessionPath))
@@ -148,7 +144,6 @@ export class PiRuntimeManager {
       return { task, state, timeline };
     }
 
-    this.sessionAutoApprove = false;
     await this.abort().catch(() => {});
 
     const sessionPath =
@@ -391,10 +386,6 @@ export class PiRuntimeManager {
   private async requestToolApprovalFromRenderer(
     request: PiToolApprovalRequest,
   ): Promise<{ approved: boolean; reason?: string }> {
-    if (this.sessionAutoApprove) {
-      return { approved: true };
-    }
-
     const webContents = this.subscribedWebContents;
     if (!webContents || webContents.isDestroyed()) {
       console.error("[pi-runtime] no window for tool approval; denying");

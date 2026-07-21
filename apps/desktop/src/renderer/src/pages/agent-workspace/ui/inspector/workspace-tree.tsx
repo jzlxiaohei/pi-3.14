@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, File, Folder, RefreshCw } from "lucide-solid";
 import { createEffect, createSignal, For, Show } from "solid-js";
-import type { WorkspaceDirEntry } from "../../../../../../shared/pi-ipc";
+import type { WorkspaceDirEntry } from "../../../../../../shared/desktop-contracts";
 
 type WorkspaceTreeProps = {
   cwd: string | null;

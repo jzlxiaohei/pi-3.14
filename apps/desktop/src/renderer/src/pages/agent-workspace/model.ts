@@ -1,5 +1,5 @@
 import { createMemo, createSignal, onMount } from "solid-js";
-import type { WorkspaceTask } from "../../../../shared/pi-ipc";
+import type { WorkspaceTask } from "../../../../shared/desktop-contracts";
 
 export type TaskStatus = WorkspaceTask["status"];
 export type InspectorTab = "changes" | "terminal";

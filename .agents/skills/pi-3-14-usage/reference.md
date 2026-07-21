@@ -101,6 +101,63 @@ session.agent.beforeToolCall = async (ctx, signal) => {
 Fail closed for write or destructive calls when the host cannot obtain a clear
 approval decision.
 
+Prefer the packaged helpers instead of re-implementing gates:
+
+```ts
+import {
+  createEmbeddedPiHost,
+  createSessionAutoApprove,
+  repairOrphanedToolCalls,
+  toolNeedsApproval,
+} from "@pi-3.14/runtime/embedded";
+
+const approve = createSessionAutoApprove(async (request) => {
+  // interactive UI decision
+  return { approved: true };
+});
+
+const host = await createEmbeddedPiHost({
+  cwd,
+  sessionPath,
+  toolApproval: approve,
+});
+```
+
+`createEmbeddedPiHost` already runs `repairOrphanedToolCalls` before the session
+is loaded into the agent.
+
+## Host Pitfalls (desktop / out-of-process)
+
+These bit PIE desktop and should stay encoded in `@pi-3.14/runtime`, not re-learned
+in each host:
+
+1. **Codex aborted tool turns**  
+   OpenAI Codex / Responses skips `stopReason: aborted|error` assistant messages on
+   replay, but still emits following `toolResult`s as `function_call_output`. That
+   yields `No tool call found for function call output`.  
+   **Do not** append a synthetic toolResult after an aborted assistant.  
+   **Do** `repairOrphanedToolCalls` → `SessionManager.branch` to the parent of the
+   broken assistant (already done inside `createEmbeddedPiHost`).
+
+2. **Approval must race AbortSignal**  
+   `beforeToolCall` can wait on UI forever. If the turn aborts (user stop, host
+   dispose, process death), resolve the gate fail-closed via `raceApproval` /
+   packaged `toolApproval` wiring. Reject pending UI approvals on abort too.
+
+3. **First-allow session unlock**  
+   Use `createSessionAutoApprove` so one Allow covers the rest of the host binding.
+   Call `reset()` when creating or switching sessions.
+
+4. **utilityProcess message shape**  
+   Child `parentPort` messages arrive as `{ data }`; parent `child.on("message")`
+   receives the payload directly. Unwrap defensively on the child side.
+
+Desktop-only (keep in `PiRuntimeManager`, not `@pi-3.14/runtime`): make
+`activateTask` idempotent for the already-bound task, and re-present any pending
+approval to a new renderer subscription. Vite HMR while dogfooding this repo can
+trigger that path, but the guard is general remount/re-subscribe hygiene — do not
+gate it on `DEV`.
+
 ## SessionManager And Fork
 
 Resume by ID means list metadata, then open by path. There is no stable

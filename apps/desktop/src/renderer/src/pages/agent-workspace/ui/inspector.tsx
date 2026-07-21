@@ -1,7 +1,7 @@
 import { Copy, GitBranch, GitCompareArrows, RefreshCw, Terminal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { TimelineItem } from "@/features/agent-timeline";
-import type { WorkspaceGitSnapshot } from "../../../../../shared/pi-ipc";
+import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
 import type { InspectorTab } from "../model";
 import {
   diffFilesFromGitPatch,

@@ -5,7 +5,7 @@ import {
   type PiSessionEntrySnapshot,
   type PiSessionSnapshot,
 } from "@pi-3.14/session";
-import type { PiTimelineItem, PiTimelineSnapshot } from "./pi-ipc";
+import type { PiTimelineItem, PiTimelineSnapshot } from "./desktop-contracts";
 
 /**
  * Project the active-path session snapshot into linear timeline items.

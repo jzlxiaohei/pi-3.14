@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { PiRuntimeManager } from "./pi/runtime-manager";
 import { listWorkspaceChildren } from "./pi/workspace-fs";
 import { readWorkspaceGit } from "./pi/workspace-git";
-import type { WorkspaceListRequest } from "../shared/pi-ipc";
+import type { WorkspaceListRequest } from "../shared/desktop-contracts";
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL);
 const piRuntime = new PiRuntimeManager();

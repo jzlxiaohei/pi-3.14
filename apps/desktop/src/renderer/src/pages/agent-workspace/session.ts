@@ -16,7 +16,7 @@ import type {
   PiTimelineSnapshot,
   PiToolApprovalRequest,
   WorkspaceTask,
-} from "../../../../shared/pi-ipc";
+} from "../../../../shared/desktop-contracts";
 import type { WorkspaceModel } from "./model";
 
 const busyStatuses = new Set(["streaming", "compacting", "retrying"]);

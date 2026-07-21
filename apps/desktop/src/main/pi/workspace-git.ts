@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { WorkspaceGitFile, WorkspaceGitSnapshot } from "../../shared/pi-ipc";
+import type { WorkspaceGitFile, WorkspaceGitSnapshot } from "../../shared/desktop-contracts";
 
 const execFileAsync = promisify(execFile);
 const MAX_PATCH_CHARS = 400_000;

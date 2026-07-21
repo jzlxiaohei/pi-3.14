@@ -1,6 +1,6 @@
 import { Command, GitBranch, Moon, Sun } from "lucide-solid";
 import { createEffect, createSignal } from "solid-js";
-import type { WorkspaceGitSnapshot } from "../../../../../shared/pi-ipc";
+import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
 import type { WorkspaceModel } from "../model";
 import type { AgentWorkspaceSession } from "../session";
 import { AgentTimeline, Composer } from "@/features/agent-timeline/solid";

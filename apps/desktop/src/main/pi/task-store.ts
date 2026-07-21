@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { WorkspaceTask, WorkspaceTaskStatus } from "../../shared/pi-ipc";
+import type { WorkspaceTask, WorkspaceTaskStatus } from "../../shared/desktop-contracts";
 
 type TaskStoreFile = {
   selectedTaskId: string | null;

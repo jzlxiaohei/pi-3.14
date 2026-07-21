@@ -7,12 +7,16 @@
 import { randomUUID } from "node:crypto";
 import type { PiHostState, PiTurnResult } from "@pi-3.14/model";
 import type { PiHost } from "@pi-3.14/runtime";
-import { createEmbeddedPiHost } from "@pi-3.14/runtime/embedded";
+import {
+  createEmbeddedPiHost,
+  createSessionAutoApprove,
+  type SessionAutoApprove,
+} from "@pi-3.14/runtime/embedded";
 import type {
   PiHostCommand,
   PiHostProcessMessage,
   PiHostToolApprovalRequestMessage,
-} from "../../shared/pi-ipc";
+} from "../../shared/desktop-contracts";
 
 type ParentPort = {
   on(event: "message", listener: (message: { data: unknown }) => void): void;
@@ -26,6 +30,7 @@ if (!parentPort) {
 }
 
 let host: PiHost | null = null;
+let sessionAutoApprove: SessionAutoApprove | null = null;
 const pendingApprovals = new Map<
   string,
   {
@@ -61,10 +66,12 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
           host = null;
         }
         rejectAllApprovals("Host recreated");
+        sessionAutoApprove?.reset();
+        sessionAutoApprove = createSessionAutoApprove((request) => requestToolApproval(request));
         host = await createEmbeddedPiHost({
           cwd: command.cwd,
           ...(command.sessionPath ? { sessionPath: command.sessionPath } : {}),
-          toolApproval: (request) => requestToolApproval(request),
+          toolApproval: sessionAutoApprove,
         });
         const state = await host.getState();
         replyOk(command.id, state);
@@ -92,6 +99,8 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
       }
       case "dispose": {
         rejectAllApprovals("Host disposed");
+        sessionAutoApprove?.reset();
+        sessionAutoApprove = null;
         if (host) {
           await host.dispose().catch(() => {});
           host = null;

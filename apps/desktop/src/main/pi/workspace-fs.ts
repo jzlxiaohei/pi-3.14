@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import type { WorkspaceListResult } from "../../shared/pi-ipc";
+import type { WorkspaceListResult } from "../../shared/desktop-contracts";
 
 const IGNORED = new Set([
   ".git",

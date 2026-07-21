@@ -113,7 +113,7 @@
   place-items: center;
   border-radius: 12px;
   color: var(--text-inverse);
-  background: var(--gradient-primary);
+  background: var(--action-primary);
   box-shadow: var(--shadow-primary);
 }
 
@@ -257,6 +257,7 @@
   padding: 10px 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
+  color: var(--text-primary);
   text-align: left;
 }
 
@@ -295,6 +296,7 @@
 }
 
 .task-copy strong {
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -363,9 +365,16 @@
 
 .main-panel {
   position: relative;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--surface-panel-solid);
+}
+
+.main-panel > .task-header {
+  flex-shrink: 0;
 }
 
 .task-header {
@@ -378,14 +387,25 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.task-header-copy {
+  min-width: 0;
+  flex: 1;
+}
+
 .title-row {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
 }
 
 .title-row h1 {
   margin: 0;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
 }
@@ -413,14 +433,20 @@
   animation: orbit-pulse 1.8s infinite;
 }
 
-.task-header p {
+.task-header p,
+.task-meta {
   margin: 7px 0 0;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-tertiary);
   font-size: var(--text-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .header-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
 }
 
@@ -643,7 +669,7 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--surface-panel-solid);
-  box-shadow: var(--shadow-md), 0 0 0 5px rgba(17, 173, 239, .06);
+  box-shadow: var(--shadow-md), 0 0 0 5px rgba(0, 168, 240, .06);
 }
 
 .composer:focus-within {
@@ -698,8 +724,12 @@
   place-items: center;
   border-radius: 9px;
   color: var(--text-inverse);
-  background: var(--gradient-primary);
+  background: var(--action-primary);
   box-shadow: var(--shadow-primary);
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--action-primary-hover);
 }
 
 .send-button:disabled {
@@ -969,6 +999,115 @@
 
 .workspace-tree__item {
   padding-left: 29px;
+}
+
+.tool-approval-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 clamp(24px, 4vw, 56px);
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-warning, #c47b2c) 45%, var(--border-subtle));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-warning, #c47b2c) 12%, var(--surface-panel-solid));
+}
+
+.tool-approval-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tool-approval-copy strong {
+  display: block;
+  font-size: 13px;
+}
+
+.tool-approval-copy p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+}
+
+.tool-approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-empty,
+.inspector-empty {
+  margin: 16px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workspace-root {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.terminal-block {
+  margin-bottom: 12px;
+}
+
+.terminal-block pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+}
+
+.terminal-error {
+  color: var(--status-danger, #c23b3b);
+}
+
+.branch-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.branch-bar-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-status-summary {
+  margin: 0 14px 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tree-refresh {
+  display: inline-flex;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tree-muted {
+  margin: 4px 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 
 @media (max-width: 1280px) {

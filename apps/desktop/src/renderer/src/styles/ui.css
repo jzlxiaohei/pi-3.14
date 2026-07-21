@@ -21,14 +21,24 @@
 
 .button--primary {
   color: var(--text-inverse);
-  background: var(--gradient-primary);
+  background: var(--action-primary);
   box-shadow: var(--shadow-primary);
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--action-primary-hover);
 }
 
 .button--secondary {
   border: 1px solid var(--border-default);
+  color: var(--text-secondary);
   background: var(--surface-panel);
   box-shadow: var(--shadow-xs);
+}
+
+.button--secondary:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-panel-solid);
 }
 
 .button--ghost {

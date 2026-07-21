@@ -19,9 +19,14 @@
   },
   "dependencies": {
     "@ark-ui/solid": "^5.37.1",
+    "@pi-3.14/model": "workspace:^",
+    "@pi-3.14/runtime": "workspace:^",
+    "@pi-3.14/session": "workspace:^",
     "@solidjs/router": "^0.15.3",
     "@tanstack/solid-query": "^5.90.12",
     "lucide-solid": "^1.18.0",
+    "marked": "^18.0.6",
+    "shiki": "^3.20.0",
     "solid-js": "^1.9.9"
   },
   "devDependencies": {

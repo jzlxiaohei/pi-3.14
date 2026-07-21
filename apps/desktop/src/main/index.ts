@@ -1,10 +1,16 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { PiRuntimeManager } from "./pi/runtime-manager";
+import { listWorkspaceChildren } from "./pi/workspace-fs";
+import { readWorkspaceGit } from "./pi/workspace-git";
+import type { WorkspaceListRequest } from "../shared/pi-ipc";
 
-const currentFile = fileURLToPath(import.meta.url);
-const currentDir = dirname(currentFile);
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL);
+const piRuntime = new PiRuntimeManager();
+
+/** Sandboxed preload must stay CJS (`.cjs`); see electron.vite.config.ts policy. */
+const preloadPath = fileURLToPath(new URL("../preload/index.cjs", import.meta.url));
+const rendererHtmlPath = fileURLToPath(new URL("../renderer/index.html", import.meta.url));
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -18,7 +24,7 @@ function createMainWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#07111f" : "#edf5f9",
     show: false,
     webPreferences: {
-      preload: join(currentDir, "../preload/index.mjs"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
@@ -30,8 +36,12 @@ function createMainWindow() {
   if (isDevelopment && process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    void window.loadFile(join(currentDir, "../renderer/index.html"));
+    void window.loadFile(rendererHtmlPath);
   }
+
+  window.on("closed", () => {
+    void piRuntime.dispose();
+  });
 }
 
 app.whenReady().then(() => {
@@ -45,6 +55,52 @@ app.whenReady().then(() => {
     platform: process.platform
   }));
 
+  ipcMain.handle("pi:tasks:bootstrap", () => piRuntime.bootstrap());
+  ipcMain.handle("pi:tasks:list", () => piRuntime.listTasks());
+  ipcMain.handle("pi:tasks:activate", (event, taskId: string) => {
+    return piRuntime.activateTask(event.sender, taskId);
+  });
+
+  ipcMain.handle("pi:session:pick-workspace", (event) => {
+    return piRuntime.pickWorkspace(event.sender);
+  });
+
+  ipcMain.handle("pi:session:create", (event, options) => {
+    return piRuntime.createSession(event.sender, options);
+  });
+
+  ipcMain.handle("pi:session:prompt", (event, text: string) => {
+    return piRuntime.prompt(event.sender, text);
+  });
+
+  ipcMain.handle("pi:session:abort", () => {
+    return piRuntime.abort();
+  });
+
+  ipcMain.handle("pi:session:get-state", () => {
+    return piRuntime.getState();
+  });
+
+  ipcMain.handle("pi:session:get-timeline", () => {
+    return piRuntime.getTimeline();
+  });
+
+  ipcMain.handle("pi:session:get-pending-approval", () => {
+    return piRuntime.getPendingApproval();
+  });
+
+  ipcMain.handle("pi:session:dispose", () => {
+    return piRuntime.dispose();
+  });
+
+  ipcMain.handle("workspace:list", (_event, request: WorkspaceListRequest) => {
+    return listWorkspaceChildren(request.cwd, request.path ?? "");
+  });
+
+  ipcMain.handle("workspace:git", (_event, cwd: string) => {
+    return readWorkspaceGit(cwd);
+  });
+
   createMainWindow();
 
   app.on("activate", () => {
@@ -57,4 +113,8 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  void piRuntime.dispose();
 });

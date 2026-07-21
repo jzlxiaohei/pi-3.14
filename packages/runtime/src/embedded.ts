@@ -1,9 +1,11 @@
 import type {
+  JsonValue,
   PiHostEvent,
   PiHostState,
   PiStopReason,
   PiTurnResult,
 } from "@pi-3.14/model";
+import { toJsonValue } from "@pi-3.14/model";
 import {
   type AgentSession,
   type AgentSessionRuntime,
@@ -27,9 +29,27 @@ import {
   promptText,
 } from "./contracts.js";
 import { messageStopReason, messageText, projectPiEvent } from "./events.js";
+import { repairOrphanedToolCalls } from "./repair-orphaned-tools.js";
+
+export type PiToolApprovalRequest = {
+  toolCallId: string;
+  toolName: string;
+  args: JsonValue;
+};
+
+export type PiToolApprovalDecision = {
+  approved: boolean;
+  reason?: string;
+};
+
+export type PiToolApprovalHandler = (
+  request: PiToolApprovalRequest,
+) => Promise<PiToolApprovalDecision>;
 
 export interface EmbeddedPiHostOptions {
   cwd?: string;
+  /** Resume an existing JSONL session instead of creating a new one. */
+  sessionPath?: string;
   agentDir?: string;
   sessionManager?: SessionManager;
   services?: Omit<CreateAgentSessionServicesOptions, "cwd" | "agentDir">;
@@ -42,6 +62,11 @@ export interface EmbeddedPiHostOptions {
    * resolution that cannot be represented by the default service options.
    */
   createRuntime?: CreateAgentSessionRuntimeFactory;
+  /**
+   * Gate write/destructive tools. Fail closed when the handler denies or throws.
+   * Read-like tools are auto-approved.
+   */
+  toolApproval?: PiToolApprovalHandler;
 }
 
 interface ActiveTurn {
@@ -235,12 +260,104 @@ export async function createEmbeddedPiHost(
         diagnostics: services.diagnostics,
       };
     });
+  const sessionManager =
+    options.sessionManager ??
+    (options.sessionPath
+      ? SessionManager.open(options.sessionPath, undefined, cwd)
+      : SessionManager.create(cwd));
+  repairOrphanedToolCalls(sessionManager);
   const runtime = await createAgentSessionRuntime(createRuntime, {
     cwd,
     agentDir,
-    sessionManager: options.sessionManager ?? SessionManager.create(cwd),
+    sessionManager,
   });
-  return new EmbeddedPiHost(runtime);
+  const host = new EmbeddedPiHost(runtime);
+  if (options.toolApproval) {
+    installToolApprovalGate(host.session, options.toolApproval);
+  }
+  return host;
+}
+
+function installToolApprovalGate(session: AgentSession, approve: PiToolApprovalHandler): void {
+  const agent = session.agent as {
+    beforeToolCall?: (
+      ctx: {
+        toolCall: { id: string; name: string };
+        args: unknown;
+      },
+      signal?: AbortSignal,
+    ) => Promise<{ block?: boolean; reason?: string } | undefined>;
+  };
+  const prior = agent.beforeToolCall?.bind(agent);
+  agent.beforeToolCall = async (ctx, signal) => {
+    const upstream = prior ? await prior(ctx, signal) : undefined;
+    if (upstream?.block) return upstream;
+    if (!toolNeedsApproval(ctx.toolCall.name)) return upstream;
+    if (signal?.aborted) {
+      return { block: true, reason: "Aborted" };
+    }
+    try {
+      const decision = await raceApproval(approve, {
+        toolCallId: ctx.toolCall.id,
+        toolName: ctx.toolCall.name,
+        args: toJsonValue(ctx.args),
+      }, signal);
+      if (decision.approved) return upstream;
+      return { block: true, reason: decision.reason ?? "Denied by user" };
+    } catch (error) {
+      return {
+        block: true,
+        reason: error instanceof Error ? error.message : "Tool approval failed closed",
+      };
+    }
+  };
+}
+
+function raceApproval(
+  approve: PiToolApprovalHandler,
+  request: PiToolApprovalRequest,
+  signal?: AbortSignal,
+): Promise<PiToolApprovalDecision> {
+  if (!signal) return approve(request);
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      resolve({ approved: false, reason: "Aborted" });
+      return;
+    }
+    const onAbort = () => {
+      cleanup();
+      resolve({ approved: false, reason: "Aborted" });
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, { once: true });
+    void approve(request).then(
+      (decision) => {
+        cleanup();
+        resolve(decision);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
+function toolNeedsApproval(toolName: string): boolean {
+  switch (toolName) {
+    case "read":
+    case "Read":
+    case "ReadFile":
+    case "grep":
+    case "Grep":
+    case "glob":
+    case "Glob":
+    case "list":
+    case "ls":
+      return false;
+    default:
+      return true;
+  }
 }
 
 function lastAssistant(session: AgentSession): { text: string; stopReason?: PiStopReason } {

@@ -14,6 +14,18 @@ Shared PI runtime packages live under `@pi-3.14/*`.
 - Orbit tokens in `src/renderer/src/styles/tokens.css`
 - `lucide-solid` icons
 
+## Module format policy
+
+With `"type": "module"` and `sandbox: true`, keep these fixed (see `electron.vite.config.ts`):
+
+| Surface | Format | Extension | Rule |
+|---------|--------|-----------|------|
+| main | ESM | `.js` | default under `"type": "module"` |
+| preload | CJS | `.cjs` | sandboxed preload cannot run ESM `import` |
+| renderer | Vite ESM | — | avoid CJS-only dependency trees in the browser |
+
+PI host runs in an Electron `utilityProcess` (`src/main/pi/host-process.ts`), forked from main with electron-vite `?modulePath`. Main keeps task store, dialogs, and JSONL timeline projection. Do not guess `.js` / `.mjs` / `.cjs` at runtime for preload or the host entry.
+
 ## Development
 
 From the repo root:

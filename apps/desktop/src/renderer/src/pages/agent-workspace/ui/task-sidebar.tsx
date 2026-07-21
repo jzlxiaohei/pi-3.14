@@ -6,6 +6,8 @@ import { IconButton } from "@/shared/ui/icon-button";
 
 type TaskSidebarProps = {
   model: WorkspaceModel;
+  onNewTask: () => void;
+  onSelectTask: (id: string) => void;
 };
 
 export function TaskSidebar(props: TaskSidebarProps) {
@@ -15,7 +17,7 @@ export function TaskSidebar(props: TaskSidebarProps) {
         <div>
           <p class="eyebrow">Workspace</p>
           <button class="workspace-switcher">
-            Northstar <ChevronDown size={14} strokeWidth={2.4} />
+            Local tasks <ChevronDown size={14} strokeWidth={2.4} />
           </button>
         </div>
         <IconButton label="Collapse sidebar">
@@ -23,7 +25,7 @@ export function TaskSidebar(props: TaskSidebarProps) {
         </IconButton>
       </div>
 
-      <Button class="new-task" variant="primary" onClick={props.model.newTask}>
+      <Button class="new-task" variant="primary" onClick={props.onNewTask}>
         <Plus size={17} strokeWidth={2.4} />
         New task
         <span>⌘ N</span>
@@ -45,33 +47,38 @@ export function TaskSidebar(props: TaskSidebarProps) {
 
       <div class="section-label">
         <span>Recent</span>
-        <button>View all</button>
+        <span>{props.model.filteredTasks().length}</span>
       </div>
 
       <div class="task-list">
-        <For each={props.model.filteredTasks()}>
-          {(task) => (
-            <button
-              class="task-row"
-              data-selected={props.model.selectedTaskId() === task.id ? "true" : undefined}
-              onClick={() => props.model.selectTask(task.id)}
-            >
-              <span class="status-dot" data-status={task.status} />
-              <span class="task-copy">
-                <strong>{task.title}</strong>
-                <small><GitBranch size={12} /> {task.repo}</small>
-              </span>
-              <time>{task.time}</time>
-            </button>
-          )}
-        </For>
+        <Show
+          when={props.model.filteredTasks().length > 0}
+          fallback={<p class="sidebar-empty">No tasks yet. Create one to start a PI session.</p>}
+        >
+          <For each={props.model.filteredTasks()}>
+            {(task) => (
+              <button
+                class="task-row"
+                data-selected={props.model.selectedTaskId() === task.id ? "true" : undefined}
+                onClick={() => props.onSelectTask(task.id)}
+              >
+                <span class="status-dot" data-status={task.status} />
+                <span class="task-copy">
+                  <strong>{task.title}</strong>
+                  <small><GitBranch size={12} /> {task.repo}</small>
+                </span>
+                <time>{task.time}</time>
+              </button>
+            )}
+          </For>
+        </Show>
       </div>
 
       <div class="sidebar-footer">
-        <span class="usage-ring">68</span>
+        <span class="usage-ring">{Math.min(99, props.model.tasks().length)}</span>
         <span class="sidebar-footer-copy">
-          <strong>Weekly usage</strong>
-          <small>32% remaining</small>
+          <strong>Saved tasks</strong>
+          <small>Persisted locally with session resume</small>
         </span>
         <ChevronRight size={15} />
       </div>

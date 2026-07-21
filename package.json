@@ -1,0 +1,25 @@
+{
+  "name": "pi-3.14",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "clean": "pnpm -r run clean",
+    "build": "pnpm -r run build",
+    "desktop:dev": "pnpm --filter @pi-3.14/desktop dev",
+    "desktop:build": "pnpm --filter @pi-3.14/desktop build",
+    "desktop:package": "pnpm --filter @pi-3.14/desktop package",
+    "desktop:dist": "pnpm --filter @pi-3.14/desktop dist",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "pack:dry-run": "pnpm -r --workspace-concurrency=1 exec pnpm pack --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3"
+  }
+}

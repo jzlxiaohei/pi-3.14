@@ -1,0 +1,46 @@
+{
+  "name": "@pi-3.14/runtime",
+  "version": "0.1.0",
+  "description": "Embedded and RPC runtime hosts for PI coding agents.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./embedded": {
+      "types": "./dist/embedded.d.ts",
+      "import": "./dist/embedded.js"
+    },
+    "./rpc": {
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "pnpm --filter @pi-3.14/model build && tsc -p tsconfig.build.json",
+    "pretest": "pnpm build",
+    "test": "node --import tsx --test src/*.test.ts",
+    "pretypecheck": "pnpm --filter @pi-3.14/model build",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm clean && pnpm build"
+  },
+  "dependencies": {
+    "@pi-3.14/model": "workspace:^",
+    "@earendil-works/pi-coding-agent": "^0.80.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  }
+}

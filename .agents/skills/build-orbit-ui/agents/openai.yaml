@@ -1,0 +1,11 @@
+interface:
+  display_name: Build Orbit UI
+  short_description: Build consistent code-agent interfaces with Orbit UI
+  default_prompt: Use $build-orbit-ui to design and implement this code-agent interface.
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

@@ -1,0 +1,106 @@
+:root {
+  /* Typography */
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --text-2xs: .6875rem; --text-xs: .75rem; --text-sm: .8125rem; --text-md: .875rem;
+  --text-lg: 1rem; --text-xl: 1.125rem; --text-2xl: 1.375rem;
+  --leading-tight: 1.2; --leading-normal: 1.5; --leading-relaxed: 1.7;
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600;
+
+  /* Primitive colors: consume semantic roles in components */
+  --white: #fff;
+  --ink-950: #0c1728; --ink-900: #132238; --ink-800: #243a55; --ink-700: #405975;
+  --ink-600: #667d96; --ink-500: #8da0b5; --ink-400: #b4c2d0; --ink-300: #d1dce6;
+  --ink-200: #e2eaf1; --ink-100: #edf3f7; --ink-50: #f7fafc;
+  --blue-700: #087bbb; --blue-600: #049be1; --blue-500: #11adef; --blue-400: #40c3f5;
+  --blue-300: #85dcfa; --blue-200: #bcecff; --blue-100: #e7f8ff; --blue-50: #f3fbff;
+  --violet-600: #745bd6; --violet-100: #efeafe;
+  --green-600: #2e9e65; --green-100: #e8f8ef;
+  --amber-600: #c7811d; --amber-100: #fff4dc;
+  --red-600: #d45454; --red-100: #ffeded;
+
+  /* Semantic colors */
+  --surface-canvas: #edf5f9;
+  --surface-shell: rgba(250,253,255,.96);
+  --surface-panel: rgba(255,255,255,.88);
+  --surface-panel-solid: #fff;
+  --surface-subtle: #f4f8fb;
+  --surface-muted: #edf4f8;
+  --surface-selected: #e8f7fe;
+  --surface-code: #f8fbfd;
+  --surface-inverse: #122236;
+  --text-primary: var(--ink-950);
+  --text-secondary: var(--ink-700);
+  --text-tertiary: var(--ink-500);
+  --text-disabled: var(--ink-400);
+  --text-link: var(--blue-600);
+  --text-inverse: #f8fbff;
+  --border-subtle: rgba(113,145,170,.15);
+  --border-default: rgba(98,137,166,.22);
+  --border-strong: rgba(73,116,148,.34);
+  --border-focus: var(--blue-400);
+  --action-primary: var(--blue-500);
+  --action-primary-hover: var(--blue-600);
+  --action-soft: var(--blue-100);
+  --status-success: var(--green-600);
+  --status-warning: var(--amber-600);
+  --status-danger: var(--red-600);
+
+  /* Spacing: 4px base */
+  --space-0: 0; --space-0-5: .125rem; --space-1: .25rem; --space-1-5: .375rem;
+  --space-2: .5rem; --space-2-5: .625rem; --space-3: .75rem; --space-4: 1rem;
+  --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
+  --space-12: 3rem; --space-16: 4rem;
+
+  /* Radius and border */
+  --radius-xs: .375rem; --radius-sm: .5rem; --radius-md: .75rem; --radius-lg: 1rem;
+  --radius-xl: 1.25rem; --radius-2xl: 1.75rem; --radius-pill: 999px;
+  --border-1: 1px; --border-2: 2px;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgba(24,59,83,.06);
+  --shadow-sm: 0 3px 10px rgba(27,63,88,.07), 0 1px 2px rgba(20,47,67,.06);
+  --shadow-md: 0 12px 30px rgba(31,74,104,.11), 0 2px 6px rgba(27,63,88,.05);
+  --shadow-lg: 0 30px 80px rgba(28,66,92,.17), 0 8px 20px rgba(28,66,92,.08);
+  --shadow-focus: 0 0 0 3px rgba(17,173,239,.18);
+  --shadow-primary: 0 8px 22px rgba(17,173,239,.28);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,.72);
+
+  /* Gradients */
+  --gradient-canvas: radial-gradient(circle at 8% 4%,rgba(77,202,247,.24),transparent 28%),radial-gradient(circle at 92% 96%,rgba(125,105,221,.15),transparent 31%),linear-gradient(145deg,#eaf7fc 0%,#f6f9fb 48%,#edf2fa 100%);
+  --gradient-primary: linear-gradient(135deg,#17b9f5 0%,#079ee4 54%,#087fca 100%);
+  --gradient-selected: linear-gradient(135deg,rgba(224,247,255,.92),rgba(241,249,253,.96));
+  --gradient-agent: linear-gradient(135deg,#effaff 0%,#e7f6fc 100%);
+  --gradient-terminal: linear-gradient(180deg,#16293d 0%,#0f1d2d 100%);
+
+  /* Motion */
+  --duration-fast: 120ms; --duration-normal: 200ms; --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(.2,0,0,1); --ease-emphasized: cubic-bezier(.2,.8,.2,1);
+
+  /* Layout */
+  --rail-width: 68px; --sidebar-width: 264px; --inspector-width: 390px;
+  --topbar-height: 52px; --control-height-sm: 30px; --control-height-md: 36px;
+  --control-height-lg: 42px; --content-max: 780px;
+  --z-base: 0; --z-sticky: 10; --z-popover: 30;
+}
+
+[data-theme="dark"] {
+  --surface-canvas: #07111f;
+  --surface-shell: rgba(12,25,41,.96);
+  --surface-panel: rgba(17,34,53,.88);
+  --surface-panel-solid: #112235;
+  --surface-subtle: #14283e;
+  --surface-muted: #182f48;
+  --surface-selected: #123953;
+  --surface-code: #0e1d2d;
+  --text-primary: #f4f9fd;
+  --text-secondary: #c2d1de;
+  --text-tertiary: #8da4b8;
+  --text-disabled: #61778a;
+  --border-subtle: rgba(162,196,220,.09);
+  --border-default: rgba(162,196,220,.16);
+  --border-strong: rgba(162,196,220,.28);
+  --gradient-canvas: radial-gradient(circle at 8% 4%,rgba(13,155,213,.18),transparent 30%),radial-gradient(circle at 92% 96%,rgba(108,85,201,.14),transparent 32%),#07111f;
+  --gradient-selected: linear-gradient(135deg,rgba(17,59,85,.96),rgba(17,42,62,.96));
+  --gradient-agent: linear-gradient(135deg,#132e44 0%,#11283c 100%);
+}

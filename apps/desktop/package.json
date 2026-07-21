@@ -1,0 +1,36 @@
+{
+  "name": "@pi-3.14/desktop",
+  "version": "0.1.0",
+  "description": "Reusable Electron + SolidJS + Orbit desktop app template.",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('out',{recursive:true,force:true});require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "package": "pnpm build && electron-builder --dir --config electron-builder.yml",
+    "dist": "pnpm build && electron-builder --config electron-builder.yml"
+  },
+  "dependencies": {
+    "@ark-ui/solid": "^5.37.1",
+    "@solidjs/router": "^0.15.3",
+    "@tanstack/solid-query": "^5.90.12",
+    "lucide-solid": "^1.18.0",
+    "solid-js": "^1.9.9"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.15.7",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.2.4",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}

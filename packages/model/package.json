@@ -1,0 +1,33 @@
+{
+  "name": "@pi-3.14/model",
+  "version": "0.1.0",
+  "description": "JSON-safe contracts and shared model types for PI hosts.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json",
+    "pretest": "pnpm build",
+    "test": "node --import tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm clean && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  }
+}

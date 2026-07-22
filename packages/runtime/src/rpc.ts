@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type {
   PiHostEvent,
   PiHostState,
+  PiModelOption,
   PiStopReason,
   PiThinkingLevel,
   PiTurnResult,
@@ -148,6 +149,33 @@ export class RpcPiHost implements PiHost {
   async getState(): Promise<PiHostState> {
     this.assertAvailable();
     return projectState(await this.client.getState());
+  }
+
+  async listModels(): Promise<PiModelOption[]> {
+    this.assertAvailable();
+    const models = await this.client.getAvailableModels();
+    return models.map((model) => ({
+      provider: model.provider,
+      id: model.id,
+    }));
+  }
+
+  async setModel(provider: string, modelId: string): Promise<PiHostState> {
+    this.assertAvailable();
+    await this.client.setModel(provider, modelId);
+    return this.getState();
+  }
+
+  async listThinkingLevels(): Promise<PiThinkingLevel[]> {
+    this.assertAvailable();
+    // RPC has no list API; expose the full clampable set.
+    return ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  }
+
+  async setThinkingLevel(level: PiThinkingLevel): Promise<PiHostState> {
+    this.assertAvailable();
+    await this.client.setThinkingLevel(level);
+    return this.getState();
   }
 
   async newSession(options?: { parentSession?: string }): Promise<PiSessionReplacementResult> {

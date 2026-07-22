@@ -1,4 +1,10 @@
-import type { PiHostEvent, PiHostState, PiTurnResult } from "@pi-3.14/model";
+import type {
+  PiHostEvent,
+  PiHostState,
+  PiModelOption,
+  PiThinkingLevel,
+  PiTurnResult,
+} from "@pi-3.14/model";
 
 export interface PiPromptInput {
   text: string;
@@ -36,6 +42,11 @@ export interface PiHost {
   followUp(input: PiPromptInput | string): Promise<void>;
   abort(): Promise<void>;
   getState(): Promise<PiHostState>;
+  /** Models with configured auth (may be empty while providers refresh). */
+  listModels(): Promise<PiModelOption[]>;
+  setModel(provider: string, modelId: string): Promise<PiHostState>;
+  listThinkingLevels(): Promise<PiThinkingLevel[]>;
+  setThinkingLevel(level: PiThinkingLevel): Promise<PiHostState>;
   newSession(options?: { parentSession?: string }): Promise<PiSessionReplacementResult>;
   switchSession(sessionPath: string): Promise<PiSessionReplacementResult>;
   fork(entryId: string): Promise<PiForkResult>;

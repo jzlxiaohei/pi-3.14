@@ -13,6 +13,8 @@ import { Rail } from "./rail";
 import { TaskHeader } from "./task-header";
 import { TaskSidebar } from "./task-sidebar";
 import { ToolApprovalBanner } from "./tool-approval-banner";
+import { WorkflowStrip } from "./workflow-strip";
+import type { TaskWorkflow } from "../../../../../shared/desktop-contracts";
 
 type AppShellProps = {
   model: WorkspaceModel;
@@ -71,8 +73,7 @@ export function AppShell(props: AppShellProps) {
   function openInspector(tab: InspectorTab) {
     setInspectorOpen(true);
     props.model.setTab(tab);
-    if (tab === "changes") {
-      // Prefer a review-readable width when opening Changes.
+    if (tab === "files") {
       setInspectorWidth((width) => Math.max(width, INSPECTOR_DEFAULT));
       refreshInspector();
     }
@@ -87,6 +88,15 @@ export function AppShell(props: AppShellProps) {
     openInspector(tab);
   }
 
+  /** Header rail control: open/close the whole inspector (keep current tab). */
+  function toggleInspectorPanel() {
+    if (inspectorOpen()) {
+      setInspectorOpen(false);
+      return;
+    }
+    openInspector(props.model.tab());
+  }
+
   function openReview(path?: string | null) {
     if (!props.session.cwd()) return;
     setReviewPath(path ?? null);
@@ -97,6 +107,17 @@ export function AppShell(props: AppShellProps) {
     setReviewOpen(false);
     setReviewPath(null);
     refreshInspector();
+  }
+
+  async function persistWorkflow(
+    workflow: TaskWorkflow | null,
+    starterPrompt: string | null,
+  ): Promise<void> {
+    const task = props.model.selectedWorkspaceTask();
+    if (!task) return;
+    const updated = await window.piDesktop.tasks.update({ id: task.id, workflow });
+    if (updated) props.model.upsertTask(updated, true, false);
+    if (starterPrompt) props.session.prefillDraft(starterPrompt);
   }
 
   return (
@@ -173,7 +194,26 @@ export function AppShell(props: AppShellProps) {
                 status={props.session.status().runStatus}
                 onReviewChanges={() => openReview()}
                 onToggleInspector={toggleInspector}
+                onToggleInspectorPanel={toggleInspectorPanel}
               />
+              <Show when={props.model.selectedWorkspaceTask()}>
+                {(task) => (
+                  <WorkflowStrip
+                    cwd={task().cwd}
+                    disabled={props.session.isCreatingSession()}
+                    workflow={task().workflow}
+                    onWorkflowChange={(workflow, starter) => {
+                      void persistWorkflow(workflow, starter);
+                    }}
+                    onSkillsInstalled={async (setupPrompt) => {
+                      await props.session.rebindActiveTask({ draft: setupPrompt });
+                    }}
+                    onContinueSetup={(setupPrompt) => {
+                      props.session.prefillDraft(setupPrompt);
+                    }}
+                  />
+                )}
+              </Show>
               <ToolApprovalBanner
                 request={props.session.approval()}
                 onAllow={() => props.session.replyApproval(true)}
@@ -187,17 +227,24 @@ export function AppShell(props: AppShellProps) {
                 pendingApprovalToolCallId={props.session.approval()?.toolCallId ?? null}
                 onAllowApproval={() => props.session.replyApproval(true)}
                 onDenyApproval={() => props.session.replyApproval(false)}
-                onPromptSuggestion={props.session.setDraft}
+                onPromptSuggestion={props.session.prefillDraft}
               />
               <Composer
+                attentionKey={props.session.draftAttention()}
                 disabled={props.session.isCreatingSession()}
                 modelLabel={props.session.modelLabel()}
+                modelOptions={props.session.modelOptions()}
+                modelValue={props.session.modelValue()}
                 onAbort={() => void props.session.abort()}
                 onInput={props.session.setDraft}
+                onModelChange={(value) => void props.session.setModel(value)}
                 onSelectWorkspace={() => void props.session.createNewTask()}
                 onSubmit={() => void props.session.send()}
+                onThinkingChange={(value) => void props.session.setThinkingLevel(value)}
                 streaming={props.session.isBusy()}
                 thinkingLevel={props.session.thinkingLabel()}
+                thinkingOptions={props.session.thinkingOptions()}
+                thinkingValue={props.session.thinkingValue()}
                 value={props.session.draft()}
                 workspaceLabel={props.session.workspaceLabel()}
                 workspaceTitle={props.session.workspaceTitle()}

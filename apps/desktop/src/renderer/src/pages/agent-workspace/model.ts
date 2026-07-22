@@ -2,7 +2,8 @@ import { createMemo, createSignal, onMount } from "solid-js";
 import type { WorkspaceTask } from "../../../../shared/desktop-contracts";
 
 export type TaskStatus = WorkspaceTask["status"];
-export type InspectorTab = "changes" | "terminal";
+/** Right inspector: file tree + terminal; Diff Review is a Dialog. */
+export type InspectorTab = "files" | "terminal";
 export type Theme = "dark" | "light";
 
 export type TaskSummary = {
@@ -57,7 +58,10 @@ export function createWorkspaceModel() {
   const [tasks, setTasks] = createSignal<WorkspaceTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = createSignal<string | null>(null);
   const [query, setQuery] = createSignal("");
-  const [tab, setTab] = createSignal<InspectorTab>("changes");
+  const [tab, setTabRaw] = createSignal<InspectorTab>("files");
+  const setTab = (next: InspectorTab) => {
+    setTabRaw(next === "terminal" ? "terminal" : "files");
+  };
   const [theme, setTheme] = createSignal<Theme>("light");
   const [bootstrapped, setBootstrapped] = createSignal(false);
 
@@ -85,9 +89,13 @@ export function createWorkspaceModel() {
     });
   });
 
-  const selectedTask = createMemo(() => {
+  const selectedWorkspaceTask = createMemo(() => {
     const id = selectedTaskId();
-    const task = tasks().find((item) => item.id === id);
+    return tasks().find((item) => item.id === id) ?? null;
+  });
+
+  const selectedTask = createMemo(() => {
+    const task = selectedWorkspaceTask();
     return task ? toSummary(task) : null;
   });
 
@@ -117,6 +125,7 @@ export function createWorkspaceModel() {
     taskGroups,
     query,
     selectedTask,
+    selectedWorkspaceTask,
     selectedTaskId,
     tab,
     tasks,

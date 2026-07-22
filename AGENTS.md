@@ -26,3 +26,17 @@ Default stack; change only through an explicit project decision:
 For PI runtime, session, subagent, Electron integration, or tool-gating work:
 
 - PI package boundaries and Electron embedding: $pi-3-14-usage
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `jzlxiaohei/pi-3.14`; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default Matt engineering skill triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use single-context domain docs: root `CONTEXT.md` and repo-wide ADRs in `docs/adr/`. See `docs/agents/domain.md`.

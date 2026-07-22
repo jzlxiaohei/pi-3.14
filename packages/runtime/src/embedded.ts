@@ -1,4 +1,11 @@
-import type { PiHostEvent, PiHostState, PiStopReason, PiTurnResult } from "@pi-3.14/model";
+import type {
+  PiHostEvent,
+  PiHostState,
+  PiModelOption,
+  PiStopReason,
+  PiThinkingLevel,
+  PiTurnResult,
+} from "@pi-3.14/model";
 import { toJsonValue } from "@pi-3.14/model";
 import {
   type AgentSession,
@@ -156,6 +163,35 @@ export class EmbeddedPiHost implements PiHost {
       model: session.model ? { provider: session.model.provider, id: session.model.id } : null,
       thinkingLevel: session.thinkingLevel,
     };
+  }
+
+  async listModels(): Promise<PiModelOption[]> {
+    this.assertAvailable();
+    const models = await this.session.modelRuntime.getAvailable();
+    return models.map((model) => ({
+      provider: model.provider,
+      id: model.id,
+      ...("name" in model && typeof model.name === "string" ? { name: model.name } : {}),
+    }));
+  }
+
+  async setModel(provider: string, modelId: string): Promise<PiHostState> {
+    this.assertAvailable();
+    const model = this.session.modelRuntime.getModel(provider, modelId);
+    if (!model) throw new Error(`Unknown model: ${provider}/${modelId}`);
+    await this.session.setModel(model);
+    return this.getState();
+  }
+
+  async listThinkingLevels(): Promise<PiThinkingLevel[]> {
+    this.assertAvailable();
+    return this.session.getAvailableThinkingLevels() as PiThinkingLevel[];
+  }
+
+  async setThinkingLevel(level: PiThinkingLevel): Promise<PiHostState> {
+    this.assertAvailable();
+    this.session.setThinkingLevel(level);
+    return this.getState();
   }
 
   async newSession(options?: { parentSession?: string }): Promise<PiSessionReplacementResult> {

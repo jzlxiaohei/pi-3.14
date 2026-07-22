@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { PiHostEvent, PiHostState, PiTurnResult } from "@pi-3.14/model";
+import type {
+  PiHostEvent,
+  PiHostState,
+  PiModelOption,
+  PiThinkingLevel,
+  PiTurnResult,
+} from "@pi-3.14/model";
 import { readPiSessionFile } from "@pi-3.14/session/node";
 import {
   app,
@@ -23,6 +29,7 @@ import type {
   PiToolApprovalReply,
   PiToolApprovalRequest,
   PiWorkspacePickResult,
+  TaskWorkflow,
   WorkspaceTask,
 } from "../../shared/desktop-contracts";
 import { projectSessionToTimeline } from "../../shared/project-timeline";
@@ -225,6 +232,38 @@ export class PiRuntimeManager {
     return (await this.send({ id: randomUUID(), type: "get_state" })) as PiHostState;
   }
 
+  async listModels(): Promise<PiModelOption[]> {
+    this.assertHostBound();
+    return (await this.send({ id: randomUUID(), type: "list_models" })) as PiModelOption[];
+  }
+
+  async listThinkingLevels(): Promise<PiThinkingLevel[]> {
+    this.assertHostBound();
+    return (await this.send({
+      id: randomUUID(),
+      type: "list_thinking_levels",
+    })) as PiThinkingLevel[];
+  }
+
+  async setModel(provider: string, modelId: string): Promise<PiHostState> {
+    this.assertHostBound();
+    return (await this.send({
+      id: randomUUID(),
+      type: "set_model",
+      provider,
+      modelId,
+    })) as PiHostState;
+  }
+
+  async setThinkingLevel(level: PiThinkingLevel): Promise<PiHostState> {
+    this.assertHostBound();
+    return (await this.send({
+      id: randomUUID(),
+      type: "set_thinking_level",
+      level,
+    })) as PiHostState;
+  }
+
   async getTimeline(): Promise<PiTimelineSnapshot> {
     const state = await this.getState();
     return this.readTimelineSnapshot(state.sessionPath);
@@ -232,6 +271,13 @@ export class PiRuntimeManager {
 
   async listTasks(): Promise<WorkspaceTask[]> {
     return this.tasks.list();
+  }
+
+  async updateTask(
+    id: string,
+    patch: { workflow?: TaskWorkflow | null },
+  ): Promise<WorkspaceTask | null> {
+    return this.tasks.update(id, patch);
   }
 
   async dispose(): Promise<void> {

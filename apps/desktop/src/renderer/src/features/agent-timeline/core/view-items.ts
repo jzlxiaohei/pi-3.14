@@ -28,7 +28,8 @@ export function buildTimelineViewEntries(
     } else {
       entries.push({
         type: "tool_group",
-        id: `tool-group-${pendingTools[0]!.id}-${pendingTools.length}`,
+        // Prefer toolCallId so group identity survives live → JSONL remount.
+        id: `tool-group-${pendingTools.map((tool) => tool.toolCallId).join(",")}`,
         tools: pendingTools,
       });
     }

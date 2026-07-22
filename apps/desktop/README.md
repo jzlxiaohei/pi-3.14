@@ -67,6 +67,43 @@ src/renderer/src/
   styles/              tokens, base CSS, shared UI CSS, page CSS
 ```
 
+## Engineering path (optional)
+
+PIE can show a task-level **Engineering path** strip (step N/M + Next/Skip). Progress is
+stored on the task and is **not** driven by chat messages.
+
+The strip only pre-fills slash starters (e.g. `/to-spec`). It does **not** ship Matt’s
+skills. Without skills in the **current workspace**, Next still advances the strip, but the
+model may not recognize those commands.
+
+**Default recommendation: install skills in the project** you open as the task cwd (keeps
+dependency explicit and reviewable; PIE does not assume a global PI lifestyle).
+
+In the Engineering path strip, use **安装 skills** → confirm dialog → one-click install.
+That path:
+
+1. Clones `mattpocock/skills` engineering set into `{cwd}/.pi/skills/`
+2. Marks the project trusted in `~/.pi/agent/trust.json` (PI won’t load `.pi` resources
+   without trust on stricter paths)
+3. Prefills `/setup-matt-pocock-skills` in the composer (you send it; PIE does not auto-run)
+
+Manual equivalent if you prefer the CLI:
+
+```sh
+# in the target project — may prompt for agent targets; PIE’s button writes `.pi/skills` directly
+npx skills@latest add mattpocock/skills
+```
+
+**Optional:** if you personally use the same Matt set across every repo, you may instead
+install on the PI agent globally (`pi install npm:pi-matt-pocock-skills` → `~/.pi/agent`).
+That is a power-user choice, not the default docs path.
+
+Upstream skill names evolve. Starters currently match the engineering set
+(`/grill-with-docs`, `/to-spec`, …). If a slash 404s, adjust
+`pages/agent-workspace/workflow/playbooks.ts` or reinstall.
+
+Engineering path is optional: you can use PIE as a plain chat + Diff Review app without it.
+
 ## Conventions
 
 1. Keep `shared/ui` as the only place that wraps Ark primitives.

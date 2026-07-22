@@ -35,6 +35,10 @@ pnpm desktop:build
 pnpm desktop:package
 ```
 
+Optional **Engineering path** in the desktop app can use Matt engineering skills
+in the **project** workspace (not vendored here; global PI install is optional).
+See [`apps/desktop/README.md`](apps/desktop/README.md#engineering-path-optional).
+
 ## License
 
 MIT

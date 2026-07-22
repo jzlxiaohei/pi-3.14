@@ -5,14 +5,19 @@ import type { WorkspaceDirEntry } from "../../../../../../shared/desktop-contrac
 type WorkspaceTreeProps = {
   cwd: string | null;
   changedPaths?: string[];
-  /** When true, start collapsed (Changes review prefers diff space). */
+  /** `panel` = Files tab (always expanded). `drawer` = optional collapsible strip. */
+  mode?: "panel" | "drawer";
+  /** Drawer-only: start collapsed. */
   defaultCollapsed?: boolean;
   onOpenPath?: (path: string) => void;
 };
 
 export function WorkspaceTree(props: WorkspaceTreeProps) {
   const [rootKey, setRootKey] = createSignal(0);
-  const [collapsed, setCollapsed] = createSignal(props.defaultCollapsed === true);
+  const isPanel = () => (props.mode ?? "panel") === "panel";
+  const [collapsed, setCollapsed] = createSignal(
+    !isPanel() && props.defaultCollapsed === true,
+  );
   const changed = () => new Set(props.changedPaths ?? []);
 
   createEffect(() => {
@@ -21,22 +26,39 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
   });
 
   createEffect(() => {
+    if (isPanel()) {
+      setCollapsed(false);
+      return;
+    }
     setCollapsed(props.defaultCollapsed === true);
   });
 
   return (
-    <div class="tree-panel" classList={{ "tree-panel--collapsed": collapsed() }}>
+    <div
+      class="tree-panel"
+      classList={{
+        "tree-panel--panel": isPanel(),
+        "tree-panel--collapsed": !isPanel() && collapsed(),
+      }}
+    >
       <div class="tree-head">
-        <button
-          type="button"
-          class="tree-head__toggle"
-          aria-expanded={!collapsed()}
-          onClick={() => setCollapsed((value) => !value)}
+        <Show
+          when={isPanel()}
+          fallback={
+            <button
+              type="button"
+              class="tree-head__toggle"
+              aria-expanded={!collapsed()}
+              onClick={() => setCollapsed((value) => !value)}
+            >
+              {collapsed() ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              <span>Workspace files</span>
+            </button>
+          }
         >
-          {collapsed() ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-          <span>Workspace files</span>
-        </button>
-        <Show when={!collapsed()}>
+          <span class="tree-head__title">Workspace files</span>
+        </Show>
+        <Show when={isPanel() || !collapsed()}>
           <button
             type="button"
             class="tree-refresh"
@@ -47,7 +69,7 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
           </button>
         </Show>
       </div>
-      <Show when={!collapsed()}>
+      <Show when={isPanel() || !collapsed()}>
         <Show
           when={props.cwd}
           fallback={<p class="inspector-empty">Select a workspace to browse files.</p>}

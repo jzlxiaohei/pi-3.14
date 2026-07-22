@@ -2,11 +2,33 @@ import type {
   JsonValue,
   PiHostEvent,
   PiHostState,
+  PiModelOption,
+  PiModelRef,
   PiTerminalStopReason,
+  PiThinkingLevel,
   PiTurnResult,
 } from "@pi-3.14/model";
 
+export type { PiModelOption, PiModelRef, PiThinkingLevel };
+
 export type WorkspaceTaskStatus = "idle" | "running" | "done" | "error";
+
+/** Matt engineering playbooks (first slice: three paths). */
+export type TaskPlaybookId = "feature-default" | "small-tdd" | "bugfix";
+
+export type TaskWorkflowStepStatus = "pending" | "active" | "done" | "skipped";
+
+export type TaskWorkflowStep = {
+  id: string;
+  status: TaskWorkflowStepStatus;
+};
+
+/** Task-shell SOP progress — decoupled from chat/timeline. */
+export type TaskWorkflow = {
+  playbookId: TaskPlaybookId;
+  stepId: string;
+  steps: TaskWorkflowStep[];
+};
 
 export type WorkspaceTask = {
   id: string;
@@ -17,6 +39,13 @@ export type WorkspaceTask = {
   status: WorkspaceTaskStatus;
   createdAt: number;
   updatedAt: number;
+  workflow?: TaskWorkflow;
+};
+
+export type WorkspaceTaskUpdate = {
+  id: string;
+  /** Set to attach/update; `null` clears the playbook. */
+  workflow?: TaskWorkflow | null;
 };
 
 export type PiSessionCreateOptions = {
@@ -171,12 +200,53 @@ export type WorkspaceOpenReviewRequest = {
   path?: string | null;
 };
 
+/** Install Matt engineering skills into `{cwd}/.pi/skills`. */
+export type WorkspaceInstallMattSkillsRequest = {
+  cwd: string;
+};
+
+export type WorkspaceInstallMattSkillsResult =
+  | {
+      ok: true;
+      skillsDir: string;
+      skillNames: string[];
+      /** Wrote cwd → trusted in ~/.pi/agent/trust.json */
+      trusted: boolean;
+    }
+  | { ok: false; error: string };
+
+/** Probe whether Matt engineering skills already exist under `{cwd}/.pi/skills`. */
+export type WorkspaceMattSkillsStatusRequest = {
+  cwd: string;
+};
+
+export type WorkspaceMattSkillsStatus = {
+  cwd: string;
+  skillsDir: string;
+  /** True when core engineering skills are present under `.pi/skills`. */
+  installed: boolean;
+  skillNames: string[];
+  missing: string[];
+  /**
+   * True when `/setup-matt-pocock-skills` artifacts exist:
+   * `docs/agents/issue-tracker.md`, `domain.md`, optional `triage-labels.md`,
+   * and `## Agent skills` in CLAUDE.md / AGENTS.md.
+   */
+  setupComplete: boolean;
+  /** Missing setup artifacts (empty when setupComplete). */
+  setupMissing: string[];
+};
+
 /** Main → utilityProcess PI host commands. */
 export type PiHostCommand =
   | { id: string; type: "abort" }
   | { id: string; type: "create"; cwd: string; sessionPath?: string | null }
   | { id: string; type: "dispose" }
   | { id: string; type: "get_state" }
+  | { id: string; type: "list_models" }
+  | { id: string; type: "list_thinking_levels" }
+  | { id: string; type: "set_model"; provider: string; modelId: string }
+  | { id: string; type: "set_thinking_level"; level: PiThinkingLevel }
   | { id: string; text: string; type: "prompt" }
   | {
       id: string;
@@ -187,7 +257,17 @@ export type PiHostCommand =
     };
 
 export type PiHostResponse =
-  | { id: string; ok: true; result: PiHostState | PiTurnResult | { disposed: true } | { aborted: true } }
+  | {
+      id: string;
+      ok: true;
+      result:
+        | PiHostState
+        | PiTurnResult
+        | PiModelOption[]
+        | PiThinkingLevel[]
+        | { disposed: true }
+        | { aborted: true };
+    }
   | { errorMessage: string; id: string; ok: false };
 
 export type PiHostToolApprovalRequestMessage = {

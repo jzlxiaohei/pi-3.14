@@ -15,6 +15,14 @@ export interface PiModelRef {
   id: string;
 }
 
+/** Selectable model row for host UIs. */
+export interface PiModelOption {
+  provider: string;
+  id: string;
+  /** Optional display name from the provider catalog. */
+  name?: string;
+}
+
 export interface PiHostState {
   sessionId: string;
   sessionPath: string | null;

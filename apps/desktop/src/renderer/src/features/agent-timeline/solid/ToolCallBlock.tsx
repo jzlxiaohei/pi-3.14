@@ -9,11 +9,17 @@ import {
   Terminal,
   XCircle,
 } from "lucide-solid";
-import { For, Match, Show, Switch, createSignal } from "solid-js";
+import { For, Match, Show, Switch } from "solid-js";
 import type { JSX } from "solid-js";
 import type { TimelineToolCall } from "../core";
 import { formatJson } from "../core";
 import { CodeBlock } from "./markdown/CodeBlock";
+import {
+  setTimelineSectionOpen,
+  timelineSectionOpen,
+  toolArgsKey,
+  toolOutputKey,
+} from "./timeline-ui-state";
 
 type ToolCallBlockProps = {
   item: TimelineToolCall;
@@ -23,8 +29,10 @@ type ToolCallBlockProps = {
 };
 
 export function ToolCallBlock(props: ToolCallBlockProps) {
-  const [open, setOpen] = createSignal(false);
-  const hasDetails = () => Boolean(props.item.output || props.item.diff);
+  const argsKey = () => toolArgsKey(props.item.toolCallId);
+  const outputKey = () => toolOutputKey(props.item.toolCallId);
+  const hasOutput = () => Boolean(props.item.output || props.item.diff);
+  const outputLabel = () => (props.item.diff ? "Patch" : "Output");
 
   return (
     <article
@@ -58,27 +66,57 @@ export function ToolCallBlock(props: ToolCallBlockProps) {
         </div>
       </Show>
 
-      <details class="at-tool-args">
-        <summary>Arguments</summary>
-        <CodeBlock code={formatJson(props.item.args)} language="json" />
-      </details>
-
-      <Show when={hasDetails()}>
-        <button class="at-tool-toggle" type="button" onClick={() => setOpen((value) => !value)}>
-          {open() ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          {props.item.diff ? "Patch" : "Output"}
-        </button>
-        <Show when={open()}>
-          <div class="at-tool-details">
-            <Show when={props.item.diff}>
-              {(diff) => <DiffPreview diff={diff()} />}
-            </Show>
-            <Show when={!props.item.diff && props.item.output}>
-              {(output) => <CodeBlock code={output()} language="text" />}
-            </Show>
+      <div class="at-tool-sections">
+        <details
+          class="at-tool-section"
+          open={timelineSectionOpen(argsKey())}
+          onToggle={(event) => {
+            setTimelineSectionOpen(argsKey(), event.currentTarget.open);
+          }}
+        >
+          <summary>
+            {timelineSectionOpen(argsKey()) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            Arguments
+          </summary>
+          <div class="at-tool-section__body">
+            <CodeBlock code={formatJson(props.item.args)} language="json" />
           </div>
+        </details>
+
+        <Show when={hasOutput()}>
+          <details
+            class="at-tool-section"
+            open={timelineSectionOpen(outputKey())}
+            onToggle={(event) => {
+              setTimelineSectionOpen(outputKey(), event.currentTarget.open);
+            }}
+          >
+            <summary>
+              {timelineSectionOpen(outputKey()) ? (
+                <ChevronDown size={14} />
+              ) : (
+                <ChevronRight size={14} />
+              )}
+              {outputLabel()}
+            </summary>
+            <div class="at-tool-section__body">
+              <Show when={props.item.diff}>
+                {(diff) => <DiffPreview diff={diff()} />}
+              </Show>
+              <Show when={!props.item.diff && props.item.output}>
+                {(output) => (
+                  <div
+                    class="at-tool-output"
+                    classList={{ "at-tool-output--error": props.item.status === "error" }}
+                  >
+                    <CodeBlock code={output()} language="text" />
+                  </div>
+                )}
+              </Show>
+            </div>
+          </details>
         </Show>
-      </Show>
+      </div>
     </article>
   );
 }
@@ -109,9 +147,15 @@ function toolIcon(toolName: string): JSX.Element {
 function stateIcon(status: TimelineToolCall["status"]): JSX.Element {
   return (
     <Switch>
-      <Match when={status === "running"}><LoaderCircle class="at-spin" size={17} /></Match>
-      <Match when={status === "error"}><XCircle size={17} /></Match>
-      <Match when={status === "success"}><CheckCircle size={17} /></Match>
+      <Match when={status === "running"}>
+        <LoaderCircle class="at-spin" size={17} />
+      </Match>
+      <Match when={status === "error"}>
+        <XCircle size={17} />
+      </Match>
+      <Match when={status === "success"}>
+        <CheckCircle size={17} />
+      </Match>
     </Switch>
   );
 }

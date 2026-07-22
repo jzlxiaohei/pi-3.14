@@ -1,4 +1,4 @@
-import { Copy, GitBranch, GitCompareArrows, PanelRight, RefreshCw, Terminal } from "lucide-solid";
+import { Copy, Files, GitBranch, PanelRight, RefreshCw, Terminal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { TimelineItem } from "@/features/agent-timeline";
 import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
@@ -11,7 +11,6 @@ import {
 } from "../diff-from-timeline";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Tabs } from "@/shared/ui/tabs";
-import { DiffPreview } from "./inspector/diff-preview";
 import { TerminalPreview } from "./inspector/terminal-preview";
 import { WorkspaceTree } from "./inspector/workspace-tree";
 
@@ -29,9 +28,6 @@ export function Inspector(props: InspectorProps) {
   const [git, setGit] = createSignal<WorkspaceGitSnapshot | null>(null);
   const [gitError, setGitError] = createSignal<string | null>(null);
   const [loadingGit, setLoadingGit] = createSignal(false);
-  const [selectedPath, setSelectedPath] = createSignal<string | null>(null);
-  const [discardingPath, setDiscardingPath] = createSignal<string | null>(null);
-  const [discardError, setDiscardError] = createSignal<string | null>(null);
 
   createEffect(() => {
     const cwd = props.cwd;
@@ -39,7 +35,6 @@ export function Inspector(props: InspectorProps) {
     if (!cwd) {
       setGit(null);
       setGitError(null);
-      setSelectedPath(null);
       return;
     }
     void loadGit(cwd);
@@ -68,6 +63,7 @@ export function Inspector(props: InspectorProps) {
     ...files().map((file) => file.path),
     ...(git()?.files.map((file) => file.path) ?? []),
   ]);
+  const changedPathSet = createMemo(() => new Set(changedPaths()));
   const branchLabel = createMemo(() => {
     const snapshot = git();
     if (!props.cwd) return "No workspace";
@@ -77,35 +73,14 @@ export function Inspector(props: InspectorProps) {
     return snapshot.branch ?? "HEAD";
   });
 
-  async function discardSelected(path: string): Promise<void> {
-    const cwd = props.cwd;
-    if (!cwd || discardingPath()) return;
-    setDiscardingPath(path);
-    setDiscardError(null);
-    try {
-      const result = await window.piDesktop.workspace.gitDiscard({ cwd, path });
-      if (!result.ok) {
-        if (result.cancelled) return;
-        setDiscardError(result.error);
-        return;
-      }
-      const snapshot = await window.piDesktop.workspace.git(cwd);
-      setGit(snapshot);
-      const nextFiles = mergeReviewDiffFiles(
-        diffFilesFromTimeline(props.items),
-        diffFilesFromGitPatch(snapshot.patch),
-        snapshot.files,
-      );
-      setSelectedPath(nextFiles.find((file) => file.path !== path)?.path ?? nextFiles[0]?.path ?? null);
-    } catch (error) {
-      setDiscardError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setDiscardingPath(null);
-    }
-  }
-
   return (
-    <aside class="inspector" classList={{ "inspector--changes": props.tab === "changes" }}>
+    <aside
+      class="inspector"
+      classList={{
+        "inspector--files": props.tab === "files",
+        "inspector--terminal": props.tab === "terminal",
+      }}
+    >
       <Tabs
         value={props.tab}
         onValueChange={(value) => props.onTabChange(value as InspectorTab)}
@@ -116,10 +91,9 @@ export function Inspector(props: InspectorProps) {
         }
         items={[
           {
-            value: "changes",
-            label: "Changes",
-            badge: String(Math.max(files().length, git()?.files.length ?? 0)),
-            icon: <GitCompareArrows size={16} />,
+            value: "files",
+            label: "Files",
+            icon: <Files size={16} />,
           },
           {
             value: "terminal",
@@ -151,37 +125,21 @@ export function Inspector(props: InspectorProps) {
           >
             <Copy size={14} /> Copy
           </button>
-          <Show when={props.tab === "changes" && props.cwd}>
-            <button type="button" onClick={() => props.onOpenReview(selectedPath())}>
-              Open
-            </button>
-          </Show>
         </div>
       </div>
-      <Show when={discardError()}>
-        <p class="git-status-summary git-status-summary--error">{discardError()}</p>
-      </Show>
-      {props.tab === "changes" ? (
-        <DiffPreview
-          files={files()}
-          selectedPath={selectedPath()}
-          onSelectPath={setSelectedPath}
-          canDiscard={Boolean(props.cwd && git()?.isRepo)}
-          discardingPath={discardingPath()}
-          onDiscard={(path) => void discardSelected(path)}
+      <Show when={props.tab === "files"}>
+        <WorkspaceTree
+          cwd={props.cwd}
+          changedPaths={changedPaths()}
+          mode="panel"
+          onOpenPath={(path) => {
+            if (changedPathSet().has(path)) props.onOpenReview(path);
+          }}
         />
-      ) : (
+      </Show>
+      <Show when={props.tab === "terminal"}>
         <TerminalPreview lines={terminalLines()} />
-      )}
-      <WorkspaceTree
-        cwd={props.cwd}
-        changedPaths={changedPaths()}
-        defaultCollapsed={props.tab === "changes"}
-        onOpenPath={(path) => {
-          props.onTabChange("changes");
-          setSelectedPath(path);
-        }}
-      />
+      </Show>
     </aside>
   );
 }

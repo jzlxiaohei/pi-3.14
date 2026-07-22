@@ -74,11 +74,21 @@ export function terminalLinesFromTimeline(items: TimelineItem[]): Array<{
 }> {
   return items
     .filter((item): item is Extract<TimelineItem, { kind: "tool" }> => item.kind === "tool")
-    .filter((item) => isShellTool(item.toolName) && (item.output?.trim() || item.status === "running"))
+    .filter(
+      (item) =>
+        isShellTool(item.toolName) &&
+        (item.output?.trim() || item.status === "running" || item.status === "error"),
+    )
     .map((item) => ({
       id: item.id,
       command: shellCommand(item.args) || item.detail || item.toolName,
-      output: item.output?.trim() || (item.status === "running" ? "Running…" : ""),
+      output:
+        item.output?.trim() ||
+        (item.status === "running"
+          ? "Running…"
+          : item.status === "error"
+            ? "Command failed (no stdout/stderr)."
+            : ""),
       isError: item.status === "error",
     }));
 }

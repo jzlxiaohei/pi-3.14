@@ -1,13 +1,18 @@
+import type { PiThinkingLevel } from "@pi-3.14/model";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session } from "electron";
 import { fileURLToPath } from "node:url";
+import { installMattSkills, readMattSkillsStatus } from "./pi/install-matt-skills";
 import { PiRuntimeManager } from "./pi/runtime-manager";
 import { listWorkspaceChildren } from "./pi/workspace-fs";
 import { discardWorkspaceGitFile, readWorkspaceGit } from "./pi/workspace-git";
 import type {
   WorkspaceGitDiscardRequest,
   WorkspaceGitRequest,
+  WorkspaceInstallMattSkillsRequest,
   WorkspaceListRequest,
+  WorkspaceMattSkillsStatusRequest,
   WorkspaceOpenReviewRequest,
+  WorkspaceTaskUpdate,
 } from "../shared/desktop-contracts";
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL);
@@ -142,6 +147,9 @@ app.whenReady().then(() => {
   ipcMain.handle("pi:tasks:activate", (event, taskId: string) => {
     return piRuntime.activateTask(event.sender, taskId);
   });
+  ipcMain.handle("pi:tasks:update", (_event, request: WorkspaceTaskUpdate) => {
+    return piRuntime.updateTask(request.id, { workflow: request.workflow });
+  });
 
   ipcMain.handle("pi:session:pick-workspace", (event) => {
     return piRuntime.pickWorkspace(event.sender);
@@ -161,6 +169,25 @@ app.whenReady().then(() => {
 
   ipcMain.handle("pi:session:get-state", () => {
     return piRuntime.getState();
+  });
+
+  ipcMain.handle("pi:session:list-models", () => {
+    return piRuntime.listModels();
+  });
+
+  ipcMain.handle("pi:session:list-thinking-levels", () => {
+    return piRuntime.listThinkingLevels();
+  });
+
+  ipcMain.handle(
+    "pi:session:set-model",
+    (_event, request: { provider: string; modelId: string }) => {
+      return piRuntime.setModel(request.provider, request.modelId);
+    },
+  );
+
+  ipcMain.handle("pi:session:set-thinking-level", (_event, level: PiThinkingLevel) => {
+    return piRuntime.setThinkingLevel(level);
   });
 
   ipcMain.handle("pi:session:get-timeline", () => {
@@ -202,6 +229,20 @@ app.whenReady().then(() => {
     }
     return { ok: true };
   });
+
+  ipcMain.handle(
+    "workspace:install-matt-skills",
+    (_event, request: WorkspaceInstallMattSkillsRequest) => {
+      return installMattSkills(request);
+    },
+  );
+
+  ipcMain.handle(
+    "workspace:matt-skills-status",
+    (_event, request: WorkspaceMattSkillsStatusRequest) => {
+      return readMattSkillsStatus(request);
+    },
+  );
 
   createMainWindow();
 

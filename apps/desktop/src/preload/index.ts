@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { PiHostEvent, PiHostState } from "@pi-3.14/model";
+import type { PiHostEvent, PiHostState, PiModelOption, PiThinkingLevel } from "@pi-3.14/model";
 import type {
   PiActivateTaskResult,
   PiPromptResult,
@@ -14,10 +14,15 @@ import type {
   WorkspaceGitDiscardResult,
   WorkspaceGitRequest,
   WorkspaceGitSnapshot,
+  WorkspaceInstallMattSkillsRequest,
+  WorkspaceInstallMattSkillsResult,
   WorkspaceListRequest,
   WorkspaceListResult,
+  WorkspaceMattSkillsStatus,
+  WorkspaceMattSkillsStatusRequest,
   WorkspaceOpenReviewRequest,
   WorkspaceTask,
+  WorkspaceTaskUpdate,
 } from "../shared/desktop-contracts";
 
 export type DesktopAppInfo = {
@@ -33,6 +38,8 @@ const api = {
     list: () => ipcRenderer.invoke("pi:tasks:list") as Promise<WorkspaceTask[]>,
     activate: (taskId: string) =>
       ipcRenderer.invoke("pi:tasks:activate", taskId) as Promise<PiActivateTaskResult>,
+    update: (request: WorkspaceTaskUpdate) =>
+      ipcRenderer.invoke("pi:tasks:update", request) as Promise<WorkspaceTask | null>,
   },
   session: {
     abort: () => ipcRenderer.invoke("pi:session:abort") as Promise<void>,
@@ -40,6 +47,13 @@ const api = {
       ipcRenderer.invoke("pi:session:create", options) as Promise<PiSessionCreateResult>,
     dispose: () => ipcRenderer.invoke("pi:session:dispose") as Promise<void>,
     getState: () => ipcRenderer.invoke("pi:session:get-state") as Promise<PiHostState>,
+    listModels: () => ipcRenderer.invoke("pi:session:list-models") as Promise<PiModelOption[]>,
+    listThinkingLevels: () =>
+      ipcRenderer.invoke("pi:session:list-thinking-levels") as Promise<PiThinkingLevel[]>,
+    setModel: (request: { provider: string; modelId: string }) =>
+      ipcRenderer.invoke("pi:session:set-model", request) as Promise<PiHostState>,
+    setThinkingLevel: (level: PiThinkingLevel) =>
+      ipcRenderer.invoke("pi:session:set-thinking-level", level) as Promise<PiHostState>,
     getTimeline: () =>
       ipcRenderer.invoke("pi:session:get-timeline") as Promise<PiTimelineSnapshot>,
     getPendingApproval: () =>
@@ -79,6 +93,16 @@ const api = {
     openReview: (request: WorkspaceOpenReviewRequest) =>
       ipcRenderer.invoke("workspace:open-review", request) as Promise<{ ok: true }>,
     closeReview: () => ipcRenderer.invoke("workspace:close-review") as Promise<{ ok: true }>,
+    installMattSkills: (request: WorkspaceInstallMattSkillsRequest) =>
+      ipcRenderer.invoke(
+        "workspace:install-matt-skills",
+        request,
+      ) as Promise<WorkspaceInstallMattSkillsResult>,
+    mattSkillsStatus: (request: WorkspaceMattSkillsStatusRequest) =>
+      ipcRenderer.invoke(
+        "workspace:matt-skills-status",
+        request,
+      ) as Promise<WorkspaceMattSkillsStatus>,
   },
 };
 

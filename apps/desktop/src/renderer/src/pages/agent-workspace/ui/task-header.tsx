@@ -1,4 +1,4 @@
-import { Check, Copy, GitBranch, GitCompareArrows, LoaderCircle, Terminal } from "lucide-solid";
+import { Check, Copy, Files, GitBranch, LoaderCircle, PanelRight, Terminal } from "lucide-solid";
 import { Show } from "solid-js";
 import type { InspectorTab, TaskSummary } from "../model";
 import type { TimelineRunStatus } from "@/features/agent-timeline";
@@ -13,6 +13,8 @@ type TaskHeaderProps = {
   loading?: boolean;
   onReviewChanges?: () => void;
   onToggleInspector?: (tab: InspectorTab) => void;
+  /** Expand/collapse the whole right inspector rail. */
+  onToggleInspectorPanel?: () => void;
   status: TimelineRunStatus;
   task: TaskSummary | null;
 };
@@ -24,7 +26,7 @@ export function TaskHeader(props: TaskHeaderProps) {
     return repo ? `${branch} · ${repo}` : branch;
   };
 
-  const changesActive = () => props.inspectorOpen && props.inspectorTab === "changes";
+  const filesActive = () => props.inspectorOpen && props.inspectorTab === "files";
   const terminalActive = () => props.inspectorOpen && props.inspectorTab === "terminal";
   const changeCount = () => props.changeCount ?? 0;
 
@@ -44,13 +46,13 @@ export function TaskHeader(props: TaskHeaderProps) {
       </div>
       <div class="header-actions">
         <IconButton
-          label={changesActive() ? "Hide changes" : "Show changes"}
+          label={filesActive() ? "Hide files" : "Show files"}
           size="sm"
-          active={changesActive()}
+          active={filesActive()}
           disabled={props.loading}
-          onClick={() => props.onToggleInspector?.("changes")}
+          onClick={() => props.onToggleInspector?.("files")}
         >
-          <GitCompareArrows size={16} />
+          <Files size={16} />
         </IconButton>
         <IconButton
           label={terminalActive() ? "Hide terminal" : "Show terminal"}
@@ -61,13 +63,24 @@ export function TaskHeader(props: TaskHeaderProps) {
         >
           <Terminal size={16} />
         </IconButton>
-        <Button variant="secondary" disabled={props.loading}><Copy size={15} /> Share</Button>
+        <Button variant="secondary" disabled={props.loading}>
+          <Copy size={15} /> Share
+        </Button>
         <Show when={changeCount() > 0}>
           <Button variant="primary" disabled={props.loading} onClick={() => props.onReviewChanges?.()}>
             <Check size={15} strokeWidth={2} /> Review {changeCount()}{" "}
             {changeCount() === 1 ? "change" : "changes"}
           </Button>
         </Show>
+        <IconButton
+          label={props.inspectorOpen ? "Collapse inspector" : "Expand inspector"}
+          size="sm"
+          active={props.inspectorOpen}
+          disabled={props.loading}
+          onClick={() => props.onToggleInspectorPanel?.()}
+        >
+          <PanelRight size={16} />
+        </IconButton>
       </div>
     </header>
   );

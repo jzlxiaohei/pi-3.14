@@ -26,7 +26,11 @@ export function TerminalPreview(props: TerminalPreviewProps) {
               </summary>
               <Show
                 when={line.output}
-                fallback={<pre class={line.isError ? "terminal-error" : undefined}>(no output)</pre>}
+                fallback={
+                  <pre class={line.isError ? "terminal-error" : undefined}>
+                    {line.isError ? "Command failed (no stdout/stderr)." : "(no output)"}
+                  </pre>
+                }
               >
                 <pre class={line.isError ? "terminal-error" : undefined}>{line.output}</pre>
               </Show>

@@ -11,7 +11,7 @@ import {
   type TimelineState,
   type TimelineTurnResult,
 } from "@/features/agent-timeline";
-import type { PiHostState } from "@pi-3.14/model";
+import type { PiHostState, PiModelOption, PiThinkingLevel } from "@pi-3.14/model";
 import type {
   PiTimelineSnapshot,
   PiToolApprovalRequest,
@@ -20,16 +20,21 @@ import type {
 import type { WorkspaceModel } from "./model";
 
 const busyStatuses = new Set(["streaming", "compacting", "retrying"]);
+const MODEL_VALUE_SEP = ":::";
 
 export function createAgentWorkspaceSession(model: WorkspaceModel) {
   const [cwd, setCwd] = createSignal<string | null>(null);
-  const [draft, setDraft] = createSignal("");
+  const [draft, setDraftValue] = createSignal("");
+  /** Bumps when draft is programmatically prefilled (not user typing). */
+  const [draftAttention, setDraftAttention] = createSignal(0);
   const [isCreatingSession, setIsCreatingSession] = createSignal(false);
   const [isReady, setIsReady] = createSignal(false);
   const [turnActive, setTurnActive] = createSignal(false);
   const [activeTaskId, setActiveTaskId] = createSignal<string | null>(null);
   const [committedItems, setCommittedItems] = createSignal<TimelineItem[]>([]);
   const [approval, setApproval] = createSignal<PiToolApprovalRequest | null>(null);
+  const [models, setModels] = createSignal<PiModelOption[]>([]);
+  const [thinkingLevels, setThinkingLevels] = createSignal<PiThinkingLevel[]>([]);
   const drafts = new Map<string, string>();
   const [timeline, setTimeline] = createStore<TimelineState>(createInitialTimelineState());
 
@@ -101,7 +106,17 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
   }
 
   function restoreDraft(taskId: string): void {
-    setDraft(drafts.get(taskId) ?? "");
+    setDraftValue(drafts.get(taskId) ?? "");
+  }
+
+  function setDraft(value: string): void {
+    setDraftValue(value);
+  }
+
+  /** Prefill composer from workflow/setup/suggestions — pulse the input to draw attention. */
+  function prefillDraft(value: string): void {
+    setDraftValue(value);
+    setDraftAttention((tick) => tick + 1);
   }
 
   const hostState = createMemo(() => timeline.hostState);
@@ -169,6 +184,23 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     }
   }
 
+  /**
+   * Force re-bind so project resources (e.g. newly installed `.pi/skills`) reload.
+   * Pass `draft` to keep a composer prefill across the rebind (activate restores from map).
+   */
+  async function rebindActiveTask(options?: { draft?: string }): Promise<boolean> {
+    const taskId = activeTaskId();
+    if (options?.draft !== undefined) {
+      if (taskId) drafts.set(taskId, options.draft);
+      prefillDraft(options.draft);
+    }
+    if (!taskId) return false;
+    if (options?.draft === undefined) rememberDraft();
+    setActiveTaskId(null);
+    setIsReady(false);
+    return activateTask(taskId);
+  }
+
   async function activateTask(taskId: string): Promise<boolean> {
     if (activeTaskId() === taskId && isReady() && !isCreatingSession()) return true;
     if (isBusy()) {
@@ -233,6 +265,35 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     void window.piDesktop.session.getPendingApproval().then((request) => {
       if (request) setApproval(request);
     });
+    void refreshModelControls();
+  }
+
+  async function refreshModelControls(): Promise<void> {
+    try {
+      const [nextModels, nextLevels] = await Promise.all([
+        window.piDesktop.session.listModels(),
+        window.piDesktop.session.listThinkingLevels(),
+      ]);
+      setModels(nextModels);
+      setThinkingLevels(nextLevels);
+    } catch {
+      setModels([]);
+      setThinkingLevels([]);
+    }
+  }
+
+  async function setModel(value: string): Promise<void> {
+    const [provider, modelId] = value.split(MODEL_VALUE_SEP);
+    if (!provider || !modelId || !isReady()) return;
+    const state = await window.piDesktop.session.setModel({ provider, modelId });
+    applyHost(state);
+    setThinkingLevels(await window.piDesktop.session.listThinkingLevels().catch(() => []));
+  }
+
+  async function setThinkingLevel(level: string): Promise<void> {
+    if (!isReady()) return;
+    const state = await window.piDesktop.session.setThinkingLevel(level as PiThinkingLevel);
+    applyHost(state);
   }
 
   async function ensureSession(): Promise<boolean> {
@@ -309,6 +370,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     approval,
     cwd,
     draft,
+    draftAttention,
     hostState,
     isBusy,
     isCreatingSession,
@@ -319,14 +381,35 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     abort,
     activateTask,
     createNewTask,
+    prefillDraft,
+    rebindActiveTask,
     modelLabel: createMemo(() => {
       const modelRef = hostState()?.model;
       return modelRef ? `${modelRef.provider}/${modelRef.id}` : "PI model";
     }),
+    modelOptions: createMemo(() =>
+      models().map((item) => ({
+        label: item.name ? `${item.provider}/${item.id} · ${item.name}` : `${item.provider}/${item.id}`,
+        value: `${item.provider}${MODEL_VALUE_SEP}${item.id}`,
+      })),
+    ),
+    modelValue: createMemo(() => {
+      const modelRef = hostState()?.model;
+      return modelRef ? `${modelRef.provider}${MODEL_VALUE_SEP}${modelRef.id}` : null;
+    }),
     replyApproval,
     send,
     setDraft,
+    setModel,
+    setThinkingLevel,
     thinkingLabel: createMemo(() => `thinking: ${hostState()?.thinkingLevel ?? "unknown"}`),
+    thinkingOptions: createMemo(() =>
+      thinkingLevels().map((level) => ({
+        label: level,
+        value: level,
+      })),
+    ),
+    thinkingValue: createMemo(() => hostState()?.thinkingLevel ?? null),
     workspaceLabel: createMemo(() => workspaceLabel(cwd(), isCreatingSession(), isReady())),
     workspaceTitle: createMemo(() => cwd() ?? "Choose a local workspace folder"),
   };

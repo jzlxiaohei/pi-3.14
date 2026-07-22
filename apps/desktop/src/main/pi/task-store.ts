@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { WorkspaceTask, WorkspaceTaskStatus } from "../../shared/desktop-contracts";
+import type {
+  TaskWorkflow,
+  WorkspaceTask,
+  WorkspaceTaskStatus,
+} from "../../shared/desktop-contracts";
 
 type TaskStoreFile = {
   selectedTaskId: string | null;
@@ -75,18 +79,26 @@ export class TaskStore {
 
   async update(
     id: string,
-    patch: Partial<Pick<WorkspaceTask, "title" | "cwd" | "sessionPath" | "sessionId" | "status">>,
+    patch: Partial<Pick<WorkspaceTask, "title" | "cwd" | "sessionPath" | "sessionId" | "status">> & {
+      workflow?: TaskWorkflow | null;
+    },
     options: { touchUpdatedAt?: boolean; moveToFront?: boolean } = {},
   ): Promise<WorkspaceTask | null> {
     await this.load();
     const index = this.data.tasks.findIndex((task) => task.id === id);
     if (index < 0) return null;
     const prev = this.data.tasks[index]!;
-    const next = {
+    const { workflow: workflowPatch, ...rest } = patch;
+    const next: WorkspaceTask = {
       ...prev,
-      ...patch,
+      ...rest,
       updatedAt: options.touchUpdatedAt === false ? prev.updatedAt : Date.now(),
     };
+    if (workflowPatch === null) {
+      delete next.workflow;
+    } else if (workflowPatch !== undefined) {
+      next.workflow = workflowPatch;
+    }
     this.data.tasks[index] = next;
     if (options.moveToFront && index > 0) {
       this.data.tasks.splice(index, 1);
@@ -120,13 +132,35 @@ export function taskStorePath(userData: string): string {
 function isTask(value: unknown): value is WorkspaceTask {
   if (typeof value !== "object" || value === null) return false;
   const task = value as WorkspaceTask;
+  if (
+    typeof task.id !== "string" ||
+    typeof task.title !== "string" ||
+    typeof task.cwd !== "string" ||
+    (task.sessionPath !== null && typeof task.sessionPath !== "string") ||
+    (task.sessionId !== null && typeof task.sessionId !== "string") ||
+    typeof task.createdAt !== "number" ||
+    typeof task.updatedAt !== "number"
+  ) {
+    return false;
+  }
+  if (task.workflow !== undefined && !isWorkflow(task.workflow)) return false;
+  return true;
+}
+
+function isWorkflow(value: unknown): value is TaskWorkflow {
+  if (typeof value !== "object" || value === null) return false;
+  const workflow = value as TaskWorkflow;
   return (
-    typeof task.id === "string" &&
-    typeof task.title === "string" &&
-    typeof task.cwd === "string" &&
-    (task.sessionPath === null || typeof task.sessionPath === "string") &&
-    (task.sessionId === null || typeof task.sessionId === "string") &&
-    typeof task.createdAt === "number" &&
-    typeof task.updatedAt === "number"
+    typeof workflow.playbookId === "string" &&
+    typeof workflow.stepId === "string" &&
+    Array.isArray(workflow.steps) &&
+    workflow.steps.every(
+      (step) =>
+        typeof step?.id === "string" &&
+        (step.status === "pending" ||
+          step.status === "active" ||
+          step.status === "done" ||
+          step.status === "skipped"),
+    )
   );
 }

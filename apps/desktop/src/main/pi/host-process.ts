@@ -5,7 +5,6 @@
  * Speaks the PiHost* message protocol with the Electron main process.
  */
 import { randomUUID } from "node:crypto";
-import type { PiHostState, PiTurnResult } from "@pi-3.14/model";
 import type { PiHost } from "@pi-3.14/runtime";
 import {
   createEmbeddedPiHost,
@@ -15,6 +14,7 @@ import {
 import type {
   PiHostCommand,
   PiHostProcessMessage,
+  PiHostResponse,
   PiHostToolApprovalRequestMessage,
 } from "../../shared/desktop-contracts";
 
@@ -97,6 +97,22 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
         replyOk(command.id, await requireHost().getState());
         return;
       }
+      case "list_models": {
+        replyOk(command.id, await requireHost().listModels());
+        return;
+      }
+      case "list_thinking_levels": {
+        replyOk(command.id, await requireHost().listThinkingLevels());
+        return;
+      }
+      case "set_model": {
+        replyOk(command.id, await requireHost().setModel(command.provider, command.modelId));
+        return;
+      }
+      case "set_thinking_level": {
+        replyOk(command.id, await requireHost().setThinkingLevel(command.level));
+        return;
+      }
       case "dispose": {
         rejectAllApprovals("Host disposed");
         sessionAutoApprove?.reset();
@@ -148,10 +164,7 @@ function requireHost(): PiHost {
   return host;
 }
 
-function replyOk(
-  id: string,
-  result: PiHostState | PiTurnResult | { disposed: true } | { aborted: true },
-): void {
+function replyOk(id: string, result: Extract<PiHostResponse, { ok: true }>["result"]): void {
   parentPort!.postMessage({ id, ok: true, result });
 }
 

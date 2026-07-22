@@ -316,25 +316,43 @@
   color: var(--at-text-secondary);
 }
 
-.at-tool-args {
+.at-tool-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 6px 0 0 38px;
 }
 
-.at-tool-args summary,
-.at-tool-toggle {
-  color: var(--at-text-faint);
-  font-size: var(--text-2xs);
+.at-tool-section {
+  min-width: 0;
 }
 
-.at-tool-toggle {
+.at-tool-section > summary {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin: 7px 0 0 38px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--at-text-faint);
+  font-size: var(--text-2xs);
+  user-select: none;
 }
 
-.at-tool-details {
-  margin: 8px 0 0 38px;
+.at-tool-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.at-tool-section > summary:hover {
+  color: var(--at-text-secondary);
+}
+
+.at-tool-section__body {
+  margin-top: 6px;
+}
+
+.at-tool-output--error .at-code-block,
+.at-tool-output--error .at-code-highlight pre {
+  border-color: color-mix(in srgb, var(--status-danger) 35%, var(--at-border-subtle));
 }
 
 .at-code-block,
@@ -465,12 +483,36 @@
   box-shadow: var(--shadow-md);
   transition:
     border-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard);
+    box-shadow var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
 .at-composer:focus-within {
   border-color: var(--border-focus);
   box-shadow: var(--shadow-md), var(--shadow-focus);
+}
+
+/* Programmatic prefill: one quiet focus pulse (setup / workflow starter / suggestion). */
+@keyframes at-composer-prefill {
+  0% {
+    border-color: var(--border-default);
+    box-shadow: var(--shadow-md);
+    background-color: var(--surface-panel-solid);
+  }
+  40% {
+    border-color: var(--border-focus);
+    box-shadow: var(--shadow-md), var(--shadow-focus);
+    background-color: var(--action-soft);
+  }
+  100% {
+    border-color: var(--border-focus);
+    box-shadow: var(--shadow-md), var(--shadow-focus);
+    background-color: var(--surface-panel-solid);
+  }
+}
+
+.at-composer[data-attention="true"] {
+  animation: at-composer-prefill var(--duration-slow) var(--ease-standard) 1;
 }
 
 .at-composer textarea {
@@ -541,6 +583,30 @@
 .at-model-pill {
   color: var(--text-tertiary);
   background: var(--surface-muted);
+}
+
+.at-composer-select {
+  max-width: 160px;
+}
+
+.at-composer-select--model {
+  max-width: 240px;
+}
+
+.at-composer-select .orbit-select__trigger {
+  height: 29px;
+  max-width: 100%;
+  padding: 0 8px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: var(--text-2xs);
+}
+
+.at-composer-select .orbit-select__trigger:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-subtle);
 }
 
 .at-spin {

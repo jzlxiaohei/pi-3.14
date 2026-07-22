@@ -144,6 +144,10 @@ function summarizeTool(
 ): Pick<Extract<PiTimelineItem, { kind: "tool" }>, "detail" | "diff" | "output" | "summary"> {
   const output = typeof value === "string" ? value : extractOutput(value);
   const path = typeof value === "object" && value !== null ? firstPath(value) : null;
+  const exitMatch =
+    typeof output === "string"
+      ? output.match(/exited with code\s+(\d+)/i)
+      : null;
   const label = toolLabel(toolName);
   return {
     summary:
@@ -152,7 +156,11 @@ function summarizeTool(
         : status === "error"
           ? `${label} failed`
           : `${label} finished`,
-    detail: path ? `${toolName} · ${path}` : toolName,
+    detail: exitMatch?.[1]
+      ? `${toolName} · exit ${exitMatch[1]}`
+      : path
+        ? `${toolName} · ${path}`
+        : toolName,
     output: output || null,
     diff: typeof value === "object" && value !== null ? extractDiff(value) : null,
   };

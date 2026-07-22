@@ -87,12 +87,13 @@ function completedLabel(toolName: string, status: TimelineToolStatus): string {
 }
 
 function extractDetail(toolName: string, value: JsonValue, output: string | null, diff: string | null): string {
-  const exitCode = firstNumber(value, ["exit_code", "exitCode", "code"]);
-  const path = firstString(value, ["path", "file", "filePath", "target_file"]);
+  const exitCode =
+    firstNumber(value, ["exit_code", "exitCode", "code"]) ?? exitCodeFromText(output) ?? exitCodeFromText(value);
+  const path = firstString(value, ["path", "file", "filePath", "target_file", "command"]);
   if (exitCode !== null) return `${toolName} · exit ${exitCode}`;
   if (diff) return `${toolName} · patch available`;
   if (path) return `${toolName} · ${path}`;
-  if (output) return compact(output);
+  if (output) return compact(stripNoOutputPlaceholder(output));
   return toolName;
 }
 
@@ -111,6 +112,19 @@ function extractOutput(value: JsonValue): string | null {
   if (direct) return direct;
   if (typeof value === "string") return value;
   return null;
+}
+
+/** PI bash uses "(no output)" then appends "Command exited with code N". */
+function exitCodeFromText(value: JsonValue | string | null): number | null {
+  if (typeof value !== "string") return null;
+  const match = value.match(/exited with code\s+(\d+)/i) ?? value.match(/\bexit(?:\s+code)?\s+(\d+)\b/i);
+  if (!match?.[1]) return null;
+  const code = Number(match[1]);
+  return Number.isFinite(code) ? code : null;
+}
+
+function stripNoOutputPlaceholder(output: string): string {
+  return output.replace(/^\(no output\)\s*/i, "").trim() || output;
 }
 
 function extractDiff(value: JsonValue): string | null {

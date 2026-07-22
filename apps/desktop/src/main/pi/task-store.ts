@@ -32,9 +32,10 @@ export class TaskStore {
     return this.data;
   }
 
+  /** File array order is the sidebar order — do not sort by updatedAt. */
   async list(): Promise<WorkspaceTask[]> {
     await this.load();
-    return [...this.data.tasks].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...this.data.tasks];
   }
 
   async getSelectedId(): Promise<string | null> {
@@ -75,20 +76,22 @@ export class TaskStore {
   async update(
     id: string,
     patch: Partial<Pick<WorkspaceTask, "title" | "cwd" | "sessionPath" | "sessionId" | "status">>,
-    options: { touchUpdatedAt?: boolean } = {},
+    options: { touchUpdatedAt?: boolean; moveToFront?: boolean } = {},
   ): Promise<WorkspaceTask | null> {
     await this.load();
     const index = this.data.tasks.findIndex((task) => task.id === id);
     if (index < 0) return null;
     const prev = this.data.tasks[index]!;
-    // Selecting/activating a task must not reshuffle the sidebar (sorted by updatedAt).
-    const touchUpdatedAt = options.touchUpdatedAt !== false;
     const next = {
       ...prev,
       ...patch,
-      updatedAt: touchUpdatedAt ? Date.now() : prev.updatedAt,
+      updatedAt: options.touchUpdatedAt === false ? prev.updatedAt : Date.now(),
     };
     this.data.tasks[index] = next;
+    if (options.moveToFront && index > 0) {
+      this.data.tasks.splice(index, 1);
+      this.data.tasks.unshift(next);
+    }
     await this.persist();
     return next;
   }
@@ -99,8 +102,9 @@ export class TaskStore {
     await this.persist();
   }
 
+  /** Status-only writes must not reshuffle or bump recency. */
   async setStatus(id: string, status: WorkspaceTaskStatus): Promise<WorkspaceTask | null> {
-    return this.update(id, { status });
+    return this.update(id, { status }, { touchUpdatedAt: false });
   }
 
   private async persist(): Promise<void> {

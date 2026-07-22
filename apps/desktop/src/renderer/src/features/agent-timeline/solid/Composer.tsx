@@ -1,9 +1,12 @@
-import { ArrowRight, Code2, FolderOpen, LoaderCircle, Square } from "lucide-solid";
-import { Show } from "solid-js";
+import { ArrowRight, Code2, FolderOpen, Square } from "lucide-solid";
+import { Show, createEffect } from "solid-js";
+import { IconButton } from "@/shared/ui/icon-button";
+
+const COMPOSER_MIN_HEIGHT = 48;
+const COMPOSER_MAX_HEIGHT = 200;
 
 type ComposerProps = {
   disabled?: boolean;
-  errorMessage?: string | null;
   modelLabel: string;
   onAbort: () => void;
   onInput: (value: string) => void;
@@ -18,6 +21,20 @@ type ComposerProps = {
 
 export function Composer(props: ComposerProps) {
   const canSend = () => !props.disabled && !props.streaming && props.value.trim().length > 0;
+  let textareaRef: HTMLTextAreaElement | undefined;
+
+  function autoGrow() {
+    const el = textareaRef;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT), COMPOSER_MAX_HEIGHT)}px`;
+  }
+
+  // Grow/shrink when the value changes from any source (typing, send-clear, suggestions).
+  createEffect(() => {
+    props.value;
+    autoGrow();
+  });
 
   function submit() {
     if (!canSend()) return;
@@ -28,6 +45,7 @@ export function Composer(props: ComposerProps) {
     <div class="at-composer-wrap">
       <div class="at-composer">
         <textarea
+          ref={textareaRef}
           value={props.value}
           disabled={props.disabled || props.streaming}
           onInput={(event) => props.onInput(event.currentTarget.value)}
@@ -55,32 +73,24 @@ export function Composer(props: ComposerProps) {
             <Show
               when={props.streaming}
               fallback={
-                <button class="at-send-button" disabled={!canSend()} aria-label="Send message" onClick={submit}>
+                <IconButton
+                  label="Send message"
+                  size="sm"
+                  variant="primary"
+                  disabled={!canSend()}
+                  onClick={submit}
+                >
                   <ArrowRight size={18} strokeWidth={2.4} />
-                </button>
+                </IconButton>
               }
             >
-              <button class="at-abort-button" aria-label="Abort turn" onClick={props.onAbort}>
+              <IconButton label="Abort turn" size="sm" variant="danger" onClick={props.onAbort}>
                 <Square size={13} fill="currentColor" />
-              </button>
+              </IconButton>
             </Show>
           </div>
         </div>
       </div>
-      <p
-        class="at-composer-hint"
-        classList={{ "at-composer-hint--error": Boolean(props.errorMessage) && !props.streaming }}
-      >
-        <Show when={props.streaming}>
-          <LoaderCircle class="at-spin" size={12} /> Working…
-        </Show>
-        <Show when={!props.streaming && props.errorMessage}>
-          {props.errorMessage}
-        </Show>
-        <Show when={!props.streaming && !props.errorMessage}>
-          PI can edit files and run tools. Review changes before merging.
-        </Show>
-      </p>
     </div>
   );
 }

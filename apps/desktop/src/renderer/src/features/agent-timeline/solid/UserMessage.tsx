@@ -9,9 +9,9 @@ export function UserMessage(props: UserMessageProps) {
   return (
     <article class="at-message at-message--user">
       <header class="at-message-meta">
-        <span class="at-avatar at-avatar--user"><UserCircle size={21} /></span>
-        <strong>You</strong>
         <time>{formatTime(props.item.timestamp)}</time>
+        <strong>You</strong>
+        <span class="at-avatar at-avatar--user"><UserCircle size={18} /></span>
       </header>
       <div class="at-user-bubble">{props.item.text}</div>
     </article>

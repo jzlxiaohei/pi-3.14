@@ -1,13 +1,20 @@
 import type { JSX } from "solid-js";
 import { splitProps } from "solid-js";
 
+type IconButtonVariant = "ghost" | "primary" | "danger";
+type IconButtonSize = "sm" | "md";
+
 type IconButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
   label: string;
+  size?: IconButtonSize;
+  variant?: IconButtonVariant;
 };
 
 export function IconButton(props: IconButtonProps) {
-  const [local, rest] = splitProps(props, ["active", "class", "classList", "label"]);
+  const [local, rest] = splitProps(props, ["active", "class", "classList", "label", "size", "variant"]);
+  const variant = () => local.variant ?? "ghost";
+  const size = () => local.size ?? "md";
 
   return (
     <button
@@ -17,6 +24,8 @@ export function IconButton(props: IconButtonProps) {
       class="icon-button"
       data-active={local.active ? "true" : undefined}
       classList={{
+        [`icon-button--${variant()}`]: true,
+        [`icon-button--${size()}`]: true,
         [local.class ?? ""]: Boolean(local.class),
         ...local.classList
       }}

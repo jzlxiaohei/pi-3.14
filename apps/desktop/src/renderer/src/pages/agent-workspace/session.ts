@@ -57,6 +57,9 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     unsubscribeHostExit();
   });
 
+  /** Bumps when a newer activate/create supersedes an in-flight open. */
+  let openGeneration = 0;
+
   let restored = false;
   createEffect(() => {
     if (restored || !model.bootstrapped()) return;
@@ -120,13 +123,17 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
   });
 
   async function createNewTask(): Promise<boolean> {
-    if (isCreatingSession() || isBusy()) return false;
+    if (isBusy()) {
+      await abort();
+    }
     rememberDraft();
 
     let pickedCwd: string | null = null;
+    const generation = ++openGeneration;
     try {
       const pick = await window.piDesktop.session.pickWorkspace();
       if (pick.cancelled) return false;
+      if (generation !== openGeneration) return false;
       pickedCwd = pick.cwd;
       setCwd(pick.cwd);
       setIsReady(false);
@@ -134,8 +141,10 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       setTurnActive(false);
       setCommittedItems([]);
       setApproval(null);
+      setActiveTaskId(null);
 
       const result = await window.piDesktop.session.create({ cwd: pick.cwd });
+      if (generation !== openGeneration) return false;
       if (result.cancelled) {
         setIsReady(false);
         return false;
@@ -145,6 +154,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       model.upsertTask(result.task);
       return true;
     } catch (error) {
+      if (generation !== openGeneration) return false;
       setIsReady(false);
       if (pickedCwd) setCwd(pickedCwd);
       commitOverlay(
@@ -155,27 +165,45 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       );
       return false;
     } finally {
-      setIsCreatingSession(false);
+      if (generation === openGeneration) setIsCreatingSession(false);
     }
   }
 
   async function activateTask(taskId: string): Promise<boolean> {
-    if (isCreatingSession()) return false;
-    if (activeTaskId() === taskId && isReady()) return true;
+    if (activeTaskId() === taskId && isReady() && !isCreatingSession()) return true;
     if (isBusy()) {
       await abort();
     }
     rememberDraft();
+    // Highlight immediately; do not wait on host bind (avoids list flash/reorder).
+    model.selectTaskLocal(taskId);
 
+    const generation = ++openGeneration;
     setIsCreatingSession(true);
+    setIsReady(false);
+    setTurnActive(false);
     setApproval(null);
+    setCommittedItems([]);
+    setActiveTaskId(null);
+    commitOverlay(
+      applyTimelineSnapshot(
+        {
+          ...createInitialTimelineState(),
+          hostState: snapshotOverlay().hostState,
+        },
+        [],
+      ),
+    );
+
     try {
       const result = await window.piDesktop.tasks.activate(taskId);
+      if (generation !== openGeneration) return false;
       applyTaskBinding(result.task, result.state, result.timeline);
-      model.upsertTask(result.task);
+      model.upsertTask(result.task, false);
       restoreDraft(taskId);
       return true;
     } catch (error) {
+      if (generation !== openGeneration) return false;
       setIsReady(false);
       commitOverlay(
         applyTurnResult(snapshotOverlay(), {
@@ -185,7 +213,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       );
       return false;
     } finally {
-      setIsCreatingSession(false);
+      if (generation === openGeneration) setIsCreatingSession(false);
     }
   }
 
@@ -237,7 +265,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     try {
       const result = await window.piDesktop.session.prompt(text);
       commitSnapshot(result.timeline, result);
-      if (result.task) model.upsertTask(result.task);
+      if (result.task) model.upsertTask(result.task, true, true);
       await refreshState();
     } catch (error) {
       setIsReady(false);

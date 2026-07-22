@@ -1,4 +1,4 @@
-import { Bot, LoaderCircle } from "lucide-solid";
+import { Bot, Bug, Compass, GitCompareArrows, LoaderCircle } from "lucide-solid";
 import { For, Show, createEffect, createMemo } from "solid-js";
 import type { TimelineItem, TimelineStatus } from "../core";
 import { buildTimelineViewEntries, timelineActivityLabel } from "../core/view-items";
@@ -9,11 +9,20 @@ import { UserMessage } from "./UserMessage";
 
 type AgentTimelineProps = {
   items: TimelineItem[];
+  loading?: boolean;
+  loadingLabel?: string;
   status: TimelineStatus;
   pendingApprovalToolCallId?: string | null;
   onAllowApproval?: () => void;
   onDenyApproval?: () => void;
+  onPromptSuggestion?: (prompt: string) => void;
 };
+
+const EMPTY_SUGGESTIONS = [
+  { icon: Compass, label: "Explain this codebase", prompt: "Give me a high-level overview of this codebase: its purpose, main modules, and how they fit together." },
+  { icon: Bug, label: "Find & fix a bug", prompt: "Look for a likely bug in the code, explain the root cause, and propose a fix." },
+  { icon: GitCompareArrows, label: "Review recent changes", prompt: "Summarize the uncommitted changes in this workspace and flag anything risky." },
+] as const;
 
 export function AgentTimeline(props: AgentTimelineProps) {
   let scrollRef: HTMLElement | undefined;
@@ -43,14 +52,41 @@ export function AgentTimeline(props: AgentTimelineProps) {
 
   return (
     <section ref={scrollRef} class="agent-timeline" aria-label="Agent conversation">
+      <Show when={props.loading}>
+        <div class="at-empty-state" aria-busy="true" aria-live="polite">
+          <span><LoaderCircle class="at-spin" size={22} /></span>
+          <h2>{props.loadingLabel ?? "Opening session…"}</h2>
+          <p>Starting the PI host and loading this task’s history.</p>
+        </div>
+      </Show>
       <Show
-        when={props.items.length > 0}
+        when={!props.loading && props.items.length > 0}
         fallback={
-          <div class="at-empty-state">
-            <span><Bot size={22} /></span>
-            <h2>Start a PI session</h2>
-            <p>Choose a workspace, then ask PI to inspect, explain, edit, or verify the code.</p>
-          </div>
+          <Show when={!props.loading}>
+            <div class="at-empty-state">
+              <span><Bot size={22} /></span>
+              <h2>Start a PI session</h2>
+              <p>Choose a workspace, then ask PI to inspect, explain, edit, or verify the code.</p>
+              <Show when={props.onPromptSuggestion}>
+                {(handler) => (
+                  <div class="at-empty-suggestions">
+                    <For each={EMPTY_SUGGESTIONS}>
+                      {(item) => (
+                        <button
+                          type="button"
+                          class="at-empty-suggestion"
+                          onClick={() => handler()(item.prompt)}
+                        >
+                          <item.icon size={15} />
+                          {item.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                )}
+              </Show>
+            </div>
+          </Show>
         }
       >
         <For each={entries()}>

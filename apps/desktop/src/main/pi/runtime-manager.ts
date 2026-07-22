@@ -190,12 +190,16 @@ export class PiRuntimeManager {
         ? await this.maybeTitleFromPrompt(this.activeTaskId, text, timeline)
         : undefined;
       const task = this.activeTaskId
-        ? await this.tasks.update(this.activeTaskId, {
-            sessionPath: result.sessionPath,
-            sessionId: result.sessionId,
-            status: result.stopReason === "error" ? "error" : "done",
-            ...(title ? { title } : {}),
-          })
+        ? await this.tasks.update(
+            this.activeTaskId,
+            {
+              sessionPath: result.sessionPath,
+              sessionId: result.sessionId,
+              status: result.stopReason === "error" ? "error" : "done",
+              ...(title ? { title } : {}),
+            },
+            { moveToFront: true },
+          )
         : null;
 
       return { ...result, timeline, task };

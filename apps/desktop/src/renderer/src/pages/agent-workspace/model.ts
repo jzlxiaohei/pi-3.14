@@ -15,6 +15,12 @@ export type TaskSummary = {
   sessionPath: string | null;
 };
 
+export type TaskGroup = {
+  cwd: string;
+  label: string;
+  tasks: WorkspaceTask[];
+};
+
 export type DiffLineKind = "added" | "context" | "removed";
 
 export type DiffLine = {
@@ -64,14 +70,16 @@ export function createWorkspaceModel() {
   });
 
   const normalizedQuery = createMemo(() => query().trim().toLowerCase());
+  /** Preserve task object identity / array order — sidebar must not reshuffle on select. */
   const filteredTasks = createMemo(() => {
     const search = normalizedQuery();
-    const summaries = tasks().map(toSummary);
-    if (!search) return summaries;
-    return summaries.filter((task) => {
+    const list = tasks();
+    if (!search) return list;
+    return list.filter((task) => {
+      const repo = task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? task.cwd;
       return (
         task.title.toLowerCase().includes(search) ||
-        task.repo.toLowerCase().includes(search) ||
+        repo.toLowerCase().includes(search) ||
         task.cwd.toLowerCase().includes(search)
       );
     });
@@ -83,9 +91,30 @@ export function createWorkspaceModel() {
     return task ? toSummary(task) : null;
   });
 
+  /** Group filtered tasks by cwd; first-seen order follows task list (recent-first). */
+  const taskGroups = createMemo((): TaskGroup[] => {
+    const groups: TaskGroup[] = [];
+    const indexByCwd = new Map<string, number>();
+    for (const task of filteredTasks()) {
+      let index = indexByCwd.get(task.cwd);
+      if (index === undefined) {
+        index = groups.length;
+        indexByCwd.set(task.cwd, index);
+        groups.push({
+          cwd: task.cwd,
+          label: task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? task.cwd,
+          tasks: [],
+        });
+      }
+      groups[index]!.tasks.push(task);
+    }
+    return groups;
+  });
+
   return {
     bootstrapped,
     filteredTasks,
+    taskGroups,
     query,
     selectedTask,
     selectedTaskId,
@@ -99,18 +128,16 @@ export function createWorkspaceModel() {
       setTasks(next);
       if (selectedId !== undefined) setSelectedTaskId(selectedId);
     },
-    upsertTask(task: WorkspaceTask, select = true) {
+    upsertTask(task: WorkspaceTask, select = true, moveToFront = false) {
       setTasks((current) => {
         const index = current.findIndex((item) => item.id === task.id);
-        if (index < 0) {
-          return [task, ...current].sort((a, b) => b.updatedAt - a.updatedAt);
+        if (index < 0) return [task, ...current];
+        if (moveToFront) {
+          return [task, ...current.filter((item) => item.id !== task.id)];
         }
-        const prev = current[index]!;
         const next = current.slice();
         next[index] = task;
-        // Keep sidebar order stable when only selection/metadata refreshed.
-        if (prev.updatedAt === task.updatedAt) return next;
-        return next.sort((a, b) => b.updatedAt - a.updatedAt);
+        return next;
       });
       if (select) setSelectedTaskId(task.id);
     },
@@ -127,7 +154,7 @@ export function createWorkspaceModel() {
 
 export type WorkspaceModel = ReturnType<typeof createWorkspaceModel>;
 
-function toSummary(task: WorkspaceTask): TaskSummary {
+export function toSummary(task: WorkspaceTask): TaskSummary {
   return {
     id: task.id,
     title: task.title,
@@ -139,7 +166,7 @@ function toSummary(task: WorkspaceTask): TaskSummary {
   };
 }
 
-function formatRelative(at: number): string {
+export function formatRelative(at: number): string {
   const delta = Date.now() - at;
   const minutes = Math.round(delta / 60_000);
   if (minutes < 1) return "now";

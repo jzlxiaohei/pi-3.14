@@ -1,4 +1,4 @@
-import { Copy, GitBranch, GitCompareArrows, RefreshCw, Terminal } from "lucide-solid";
+import { Copy, GitBranch, GitCompareArrows, PanelRight, RefreshCw, Terminal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { TimelineItem } from "@/features/agent-timeline";
 import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
@@ -9,6 +9,7 @@ import {
   mergeDiffFiles,
   terminalLinesFromTimeline,
 } from "../diff-from-timeline";
+import { IconButton } from "@/shared/ui/icon-button";
 import { Tabs } from "@/shared/ui/tabs";
 import { DiffPreview } from "./inspector/diff-preview";
 import { TerminalPreview } from "./inspector/terminal-preview";
@@ -17,6 +18,7 @@ import { WorkspaceTree } from "./inspector/workspace-tree";
 type InspectorProps = {
   cwd: string | null;
   items: TimelineItem[];
+  onCollapse: () => void;
   onTabChange: (tab: InspectorTab) => void;
   refreshToken?: number;
   tab: InspectorTab;
@@ -73,6 +75,11 @@ export function Inspector(props: InspectorProps) {
       <Tabs
         value={props.tab}
         onValueChange={(value) => props.onTabChange(value as InspectorTab)}
+        trailing={
+          <IconButton label="Collapse inspector" size="sm" onClick={props.onCollapse}>
+            <PanelRight size={15} />
+          </IconButton>
+        }
         items={[
           {
             value: "changes",

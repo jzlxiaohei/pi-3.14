@@ -9,7 +9,7 @@ For all new or modified frontend work:
 
 - Architecture and component boundaries: $frontend-page-architecture
 - SolidJS client state: $solidjs-state-management
-- Product UI and tokens: $build-orbit-ui
+- Product UI, tokens, and motion: $build-orbit-ui (read `references/motion.md` when adding hover/open/close/expand/loading transitions; component CSS must use semantic tokens so dark mode works)
 - Dependency decisions: $dependency-vetting
 
 Default stack; change only through an explicit project decision:

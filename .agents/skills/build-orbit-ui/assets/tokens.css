@@ -39,8 +39,11 @@
   --border-default: rgba(98,137,166,.22);
   --border-strong: rgba(73,116,148,.34);
   --border-focus: var(--blue-400);
-  --action-primary: var(--blue-500);
-  --action-primary-hover: var(--blue-600);
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: rgba(98,137,166,.28);
+  --scrollbar-thumb-hover: rgba(98,137,166,.44);
+  --action-primary: var(--blue-400);
+  --action-primary-hover: var(--blue-500);
   --action-soft: var(--blue-100);
   --status-success: var(--green-600);
   --status-warning: var(--amber-600);
@@ -63,18 +66,18 @@
   --shadow-md: 0 12px 30px rgba(31,74,104,.11), 0 2px 6px rgba(27,63,88,.05);
   --shadow-lg: 0 30px 80px rgba(28,66,92,.17), 0 8px 20px rgba(28,66,92,.08);
   --shadow-focus: 0 0 0 3px rgba(17,173,239,.18);
-  --shadow-primary: 0 8px 22px rgba(17,173,239,.28);
+  --shadow-primary: 0 4px 12px rgba(0,168,240,.16);
   --shadow-inset: inset 0 1px 0 rgba(255,255,255,.72);
 
   /* Gradients */
   --gradient-canvas: radial-gradient(circle at 8% 4%,rgba(77,202,247,.24),transparent 28%),radial-gradient(circle at 92% 96%,rgba(125,105,221,.15),transparent 31%),linear-gradient(145deg,#eaf7fc 0%,#f6f9fb 48%,#edf2fa 100%);
   --gradient-primary: linear-gradient(135deg,#17b9f5 0%,#079ee4 54%,#087fca 100%);
-  --gradient-selected: linear-gradient(135deg,rgba(224,247,255,.92),rgba(241,249,253,.96));
+  --gradient-selected: linear-gradient(180deg,rgba(232,247,254,.72),rgba(244,249,252,.9));
   --gradient-agent: linear-gradient(135deg,#effaff 0%,#e7f6fc 100%);
   --gradient-terminal: linear-gradient(180deg,#16293d 0%,#0f1d2d 100%);
 
   /* Motion */
-  --duration-fast: 120ms; --duration-normal: 200ms; --duration-slow: 320ms;
+  --duration-fast: 120ms; --duration-base: 180ms; --duration-normal: 200ms; --duration-slow: 320ms;
   --ease-standard: cubic-bezier(.2,0,0,1); --ease-emphasized: cubic-bezier(.2,.8,.2,1);
 
   /* Layout */
@@ -100,6 +103,8 @@
   --border-subtle: rgba(162,196,220,.09);
   --border-default: rgba(162,196,220,.16);
   --border-strong: rgba(162,196,220,.28);
+  --scrollbar-thumb: rgba(162,196,220,.22);
+  --scrollbar-thumb-hover: rgba(162,196,220,.38);
   --gradient-canvas: radial-gradient(circle at 8% 4%,rgba(13,155,213,.18),transparent 30%),radial-gradient(circle at 92% 96%,rgba(108,85,201,.14),transparent 32%),#07111f;
   --gradient-selected: linear-gradient(135deg,rgba(17,59,85,.96),rgba(17,42,62,.96));
   --gradient-agent: linear-gradient(135deg,#132e44 0%,#11283c 100%);

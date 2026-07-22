@@ -12,10 +12,10 @@ Use the reference for atmosphere and density, not for copied branding or a manda
 
 Use the four-zone shell when the workflow needs all four responsibilities:
 
-1. Global rail for product-level navigation.
+1. Global rail for product-level navigation (e.g. task list, new task)—not task-scoped tools.
 2. Task sidebar for workspace, search, and sessions.
-3. Main workspace for conversation, plans, tool execution, results, and composer.
-4. Inspector for changes, diff, terminal, tests, and files.
+3. Main workspace for conversation, plans, tool execution, results, and composer. Task-scoped inspector triggers (changes, terminal) live here, not on the rail.
+4. Inspector for changes, diff, terminal, tests, and files belonging to the active task.
 
 Keep the main workspace dominant. Start around 68px rail, 240–280px sidebar, flexible main area, and 340–420px inspector. Below 1100px, collapse the inspector before shrinking the main reading area below 430px.
 
@@ -32,8 +32,11 @@ Keep the main workspace dominant. Start around 68px rail, 240–280px sidebar, f
 - Use 8–16px radii for controls and cards; reserve larger radii for the outer shell.
 - Keep shadows soft and low contrast.
 - Use gradients only for canvas atmosphere, primary actions, selected surfaces, and terminal surfaces.
-- Use 120ms motion for hover, 200ms for common transitions, and 320ms for larger state changes.
-- Respect `prefers-reduced-motion`.
+- Motion is subtractive: quiet fade and at most a ≤2px slide. No zoom bounce, spring, or overshoot. Use `--ease-standard` (`cubic-bezier(.2,0,0,1)`).
+- Durations: `--duration-fast` (120ms) for hover/color, `--duration-base` (180ms) for panel and overlay enter/exit, `--duration-normal` (200ms) when slightly longer readability helps. Avoid 300ms+ decorative motion.
+- Prefer explicit transition properties (`color`, `background`, `opacity`, `transform`, `width`) over `transition-all`.
+- Use motion to signal state changes, not decoration. Running/streaming indicators may breathe; prefer calm pulses over decorative spinners for agent work.
+- Respect `prefers-reduced-motion` (global base layer collapses animation/transition durations).
 
 ## Component behavior
 
@@ -48,11 +51,12 @@ Keep the main workspace dominant. Start around 68px rail, 240–280px sidebar, f
 
 ## Token usage
 
-- Use semantic roles such as `--surface-panel` inside components, not primitive colors such as `--blue-100`.
+- Use semantic roles such as `--surface-panel` inside components, not primitive colors such as `--blue-100` or `--ink-900`.
 - Use the 4px spacing scale.
 - Add a semantic token before introducing a new visual value.
 - Do not create local component shadows, gradients, or theme colors.
-- Implement dark mode by overriding semantic tokens.
+- Implement dark mode by overriding semantic tokens on `[data-theme="dark"]` only. Primitives on `:root` stay fixed; any component that references `--ink-*` / `--blue-*` / hard-coded hex will look wrong in dark mode.
+- When adding UI chrome (footers, rings, badges, icons), set `color` / `background` / `border-color` with semantic tokens explicitly—do not rely on light-only palette leftovers.
 
 ## Accessibility
 
@@ -66,10 +70,11 @@ Keep the main workspace dominant. Start around 68px rail, 240–280px sidebar, f
 
 - The layout supports the main task without unnecessary panels.
 - Main content remains readable at the target viewport.
-- Components consume semantic tokens and both themes are complete.
+- Components consume semantic tokens (no primitive `--ink-*` / `--blue-*` in component CSS) and both themes are complete.
 - Navigation, selection, inputs, and main actions work.
 - Relevant hover, focus, selected, loading, success, error, disabled, and empty states exist.
 - Keyboard interaction works for the primary workflow.
 - Icon source, spacing, borders, radii, and shadows are consistent.
+- If motion was added or changed, `references/motion.md` was followed (token durations/easing, no `transition: all`, no bounce/spring).
 - No important content or action is clipped.
 - Build and relevant tests pass.

@@ -38,18 +38,61 @@ button:disabled {
   cursor: default;
 }
 
+/* Minimal form reset — no full normalize. Kill native chrome; focus is owned by components. */
 input,
 textarea {
+  margin: 0;
   border: 0;
-  outline: 0;
+  border-radius: 0;
+  outline: none;
+  background: none;
+  box-shadow: none;
+  appearance: none;
 }
 
-button:focus-visible,
+input:focus,
 input:focus-visible,
-textarea:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Buttons / bare focusables: ring on the control itself. */
+button:focus-visible,
 [tabindex]:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
+}
+
+/* Quiet Orbit scrollbars — thin thumb, no harsh system chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 @keyframes orbit-spin {

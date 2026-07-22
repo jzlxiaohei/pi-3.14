@@ -10,9 +10,13 @@ import type {
   PiToolApprovalReply,
   PiToolApprovalRequest,
   PiWorkspacePickResult,
+  WorkspaceGitDiscardRequest,
+  WorkspaceGitDiscardResult,
+  WorkspaceGitRequest,
   WorkspaceGitSnapshot,
   WorkspaceListRequest,
   WorkspaceListResult,
+  WorkspaceOpenReviewRequest,
   WorkspaceTask,
 } from "../shared/desktop-contracts";
 
@@ -68,8 +72,13 @@ const api = {
   workspace: {
     list: (request: WorkspaceListRequest) =>
       ipcRenderer.invoke("workspace:list", request) as Promise<WorkspaceListResult>,
-    git: (cwd: string) =>
-      ipcRenderer.invoke("workspace:git", cwd) as Promise<WorkspaceGitSnapshot>,
+    git: (request: string | WorkspaceGitRequest) =>
+      ipcRenderer.invoke("workspace:git", request) as Promise<WorkspaceGitSnapshot>,
+    gitDiscard: (request: WorkspaceGitDiscardRequest) =>
+      ipcRenderer.invoke("workspace:git-discard", request) as Promise<WorkspaceGitDiscardResult>,
+    openReview: (request: WorkspaceOpenReviewRequest) =>
+      ipcRenderer.invoke("workspace:open-review", request) as Promise<{ ok: true }>,
+    closeReview: () => ipcRenderer.invoke("workspace:close-review") as Promise<{ ok: true }>,
   },
 };
 

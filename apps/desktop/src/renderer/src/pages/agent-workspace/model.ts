@@ -50,7 +50,7 @@ export type DiffFile = {
   language?: string;
   oldPath?: string;
   path: string;
-  status: "added" | "deleted" | "modified" | "renamed";
+  status: "added" | "deleted" | "modified" | "renamed" | "untracked";
 };
 
 export function createWorkspaceModel() {

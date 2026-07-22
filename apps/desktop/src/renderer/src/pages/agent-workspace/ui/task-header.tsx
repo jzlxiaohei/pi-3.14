@@ -47,6 +47,7 @@ export function TaskHeader(props: TaskHeaderProps) {
           label={changesActive() ? "Hide changes" : "Show changes"}
           size="sm"
           active={changesActive()}
+          disabled={props.loading}
           onClick={() => props.onToggleInspector?.("changes")}
         >
           <GitCompareArrows size={16} />
@@ -55,13 +56,14 @@ export function TaskHeader(props: TaskHeaderProps) {
           label={terminalActive() ? "Hide terminal" : "Show terminal"}
           size="sm"
           active={terminalActive()}
+          disabled={props.loading}
           onClick={() => props.onToggleInspector?.("terminal")}
         >
           <Terminal size={16} />
         </IconButton>
-        <Button variant="secondary"><Copy size={15} /> Share</Button>
+        <Button variant="secondary" disabled={props.loading}><Copy size={15} /> Share</Button>
         <Show when={changeCount() > 0}>
-          <Button variant="primary" onClick={() => props.onReviewChanges?.()}>
+          <Button variant="primary" disabled={props.loading} onClick={() => props.onReviewChanges?.()}>
             <Check size={15} strokeWidth={2} /> Review {changeCount()}{" "}
             {changeCount() === 1 ? "change" : "changes"}
           </Button>

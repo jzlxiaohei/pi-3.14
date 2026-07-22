@@ -1,3 +1,4 @@
+import { ark } from "@ark-ui/solid/factory";
 import { Tooltip as ArkTooltip } from "@ark-ui/solid/tooltip";
 import type { JSX } from "solid-js";
 import { Portal } from "solid-js/web";
@@ -9,20 +10,27 @@ type TooltipProps = {
   positioning?: "top" | "bottom" | "left" | "right";
 };
 
+/**
+ * Orbit tooltip on Ark Solid.
+ * Uses asChild + ark.span so callers can wrap a button (task sidebar) without button nesting.
+ * Content is portalled (Ark Basic / Dialog-with-Tooltip pattern).
+ */
 export function Tooltip(props: TooltipProps) {
   return (
     <ArkTooltip.Root
-      lazyMount
-      unmountOnExit
       openDelay={props.openDelay ?? 200}
       closeDelay={100}
-      positioning={{ placement: props.positioning ?? "top", gutter: 6 }}
+      positioning={{
+        placement: props.positioning ?? "top",
+        gutter: 6,
+        strategy: "fixed",
+      }}
     >
       <ArkTooltip.Trigger
         asChild={(triggerProps) => (
-          <span {...triggerProps()} class="orbit-tooltip__trigger">
+          <ark.span {...triggerProps({ class: "orbit-tooltip__trigger" })}>
             {props.children}
-          </span>
+          </ark.span>
         )}
       />
       <Portal>

@@ -1,12 +1,19 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session } from "electron";
 import { fileURLToPath } from "node:url";
 import { PiRuntimeManager } from "./pi/runtime-manager";
 import { listWorkspaceChildren } from "./pi/workspace-fs";
-import { readWorkspaceGit } from "./pi/workspace-git";
-import type { WorkspaceListRequest } from "../shared/desktop-contracts";
+import { discardWorkspaceGitFile, readWorkspaceGit } from "./pi/workspace-git";
+import type {
+  WorkspaceGitDiscardRequest,
+  WorkspaceGitRequest,
+  WorkspaceListRequest,
+  WorkspaceOpenReviewRequest,
+} from "../shared/desktop-contracts";
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL);
 const piRuntime = new PiRuntimeManager();
+let mainWindow: BrowserWindow | null = null;
+let reviewWindow: BrowserWindow | null = null;
 
 /** Sandboxed preload must stay CJS (`.cjs`); see electron.vite.config.ts policy. */
 const preloadPath = fileURLToPath(new URL("../preload/index.cjs", import.meta.url));
@@ -40,8 +47,83 @@ function createMainWindow() {
   }
 
   window.on("closed", () => {
+    mainWindow = null;
     void piRuntime.dispose();
   });
+
+  mainWindow = window;
+}
+
+function createReviewWindow(request: WorkspaceOpenReviewRequest, parent: BrowserWindow | null) {
+  if (reviewWindow && !reviewWindow.isDestroyed()) {
+    void loadReviewWindow(reviewWindow, request);
+    reviewWindow.focus();
+    return;
+  }
+
+  const owner = parent && !parent.isDestroyed() ? parent : mainWindow;
+  const window = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    minWidth: 900,
+    minHeight: 620,
+    ...(owner && !owner.isDestroyed() ? { parent: owner, modal: true } : {}),
+    title: "PIE · Review changes",
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: { x: 16, y: 18 },
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#07111f" : "#edf5f9",
+    show: false,
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  reviewWindow = window;
+  window.once("ready-to-show", () => window.show());
+  window.on("closed", () => {
+    reviewWindow = null;
+  });
+  void loadReviewWindow(window, request);
+}
+
+async function loadReviewWindow(window: BrowserWindow, request: WorkspaceOpenReviewRequest) {
+  const route = reviewRouteHash(request);
+  if (isDevelopment && process.env.ELECTRON_RENDERER_URL) {
+    await window.loadURL(`${process.env.ELECTRON_RENDERER_URL}${route}`);
+  } else {
+    await window.loadFile(rendererHtmlPath, { hash: route.slice(1) });
+  }
+}
+
+function reviewRouteHash(request: WorkspaceOpenReviewRequest): string {
+  const params = new URLSearchParams({ cwd: request.cwd });
+  if (request.path) params.set("path", request.path);
+  return `#/review?${params.toString()}`;
+}
+
+async function confirmDiscard(
+  sender: Electron.WebContents,
+  request: WorkspaceGitDiscardRequest,
+): Promise<boolean> {
+  const parent = BrowserWindow.fromWebContents(sender) ?? reviewWindow ?? mainWindow ?? undefined;
+  const options = {
+    type: "warning" as const,
+    buttons: ["Cancel", "Discard this file"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: "Discard changes?",
+    message: `Discard changes to ${request.path}?`,
+    detail:
+      "Tracked changes will be restored from HEAD. Untracked files will be moved to Trash. This cannot be undone from PIE.",
+  };
+  const result = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
 }
 
 app.whenReady().then(() => {
@@ -97,14 +179,38 @@ app.whenReady().then(() => {
     return listWorkspaceChildren(request.cwd, request.path ?? "");
   });
 
-  ipcMain.handle("workspace:git", (_event, cwd: string) => {
-    return readWorkspaceGit(cwd);
+  ipcMain.handle("workspace:git", (_event, request: string | WorkspaceGitRequest) => {
+    return readWorkspaceGit(request);
+  });
+
+  ipcMain.handle("workspace:git-discard", async (event, request: WorkspaceGitDiscardRequest) => {
+    const confirmed = await confirmDiscard(event.sender, request);
+    if (!confirmed) {
+      return { ok: false, cancelled: true, error: "Discard cancelled" };
+    }
+    return discardWorkspaceGitFile(request);
+  });
+
+  ipcMain.handle("workspace:open-review", (event, request: WorkspaceOpenReviewRequest) => {
+    createReviewWindow(request, BrowserWindow.fromWebContents(event.sender));
+    return { ok: true };
+  });
+
+  ipcMain.handle("workspace:close-review", () => {
+    if (reviewWindow && !reviewWindow.isDestroyed()) {
+      reviewWindow.close();
+    }
+    return { ok: true };
   });
 
   createMainWindow();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow();
+    } else {
+      mainWindow.focus();
+    }
   });
 }).catch((error: unknown) => {
   console.error("Failed to start Electron app", error);

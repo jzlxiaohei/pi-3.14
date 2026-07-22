@@ -11,13 +11,14 @@ Create calm, compact Code Agent interfaces with pale-blue workspace surfaces, cl
 
 1. Read `references/design-guidelines.md`.
 2. If the change adds or adjusts motion (hover, focus, open/close, expand/collapse, enter/exit, loading, streaming), also read `references/motion.md` and follow it before writing CSS/JS animation.
-3. Inspect the target project and reuse compatible components and conventions.
-4. Use `assets/tokens.css` as the visual source of truth. Copy it into a new project or map its semantic roles onto an existing token system. In this repo, keep `apps/desktop/src/renderer/src/styles/tokens.css` in sync when extending tokens.
-5. Implement the layout appropriate to the task. Treat the four-zone Code Agent shell as a default, not a mandatory template.
-6. Use semantic tokens for color, spacing, radius, border, shadow, gradient, motion, and layout values.
-7. If a required value is missing, extend the token system before hard-coding it inside a component.
-8. Implement the interactions and states needed by the primary workflow.
-9. Review against the checklist in `references/design-guidelines.md` and, when motion changed, the checklist in `references/motion.md`.
+3. If the change uses Dialog, Tooltip, Portal, or other overlays, read `references/pitfalls.md` first.
+4. Inspect the target project and reuse compatible components and conventions.
+5. Use `assets/tokens.css` as the visual source of truth. Copy it into a new project or map its semantic roles onto an existing token system. In this repo, keep `apps/desktop/src/renderer/src/styles/tokens.css` in sync when extending tokens.
+6. Implement the layout appropriate to the task. Treat the four-zone Code Agent shell as a default, not a mandatory template.
+7. Use semantic tokens for color, spacing, radius, border, shadow, gradient, motion, and layout values.
+8. If a required value is missing, extend the token system before hard-coding it inside a component.
+9. Implement the interactions and states needed by the primary workflow.
+10. Review against the checklist in `references/design-guidelines.md` and, when motion changed, the checklist in `references/motion.md`.
 
 ## Rules
 
@@ -35,3 +36,4 @@ Create calm, compact Code Agent interfaces with pale-blue workspace surfaces, cl
 - `assets/tokens.css`: canonical tokens and dark-theme overrides.
 - `references/design-guidelines.md`: visual language, layout patterns, component behavior, accessibility, and completion checklist.
 - `references/motion.md`: required motion/animation rules for UI transitions and status signals.
+- `references/pitfalls.md`: traffic-light hit targets, Dialog/Select/Tooltip Portal stacking, Solid composition traps.

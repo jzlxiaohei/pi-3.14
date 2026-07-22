@@ -131,13 +131,44 @@ export type WorkspaceGitFile = {
   status: "added" | "deleted" | "modified" | "renamed" | "untracked";
 };
 
+export type WorkspaceGitRequest = {
+  cwd: string;
+  /**
+   * Diff base ref (branch / remote-tracking / HEAD).
+   * - omit / undefined: `HEAD` (working-tree status; inspector default)
+   * - null: auto-pick `main` / `master` / upstream / `HEAD` (review default)
+   * - string: use that ref when valid
+   */
+  baseRef?: string | null;
+};
+
 export type WorkspaceGitSnapshot = {
   isRepo: boolean;
   branch: string | null;
   upstream: string | null;
+  /** Resolved base used for `files` / `patch` (working tree vs this ref). */
+  baseRef: string;
+  /** Compare targets (local + remote-tracking), excluding current branch / its upstream. */
+  bases: string[];
   files: WorkspaceGitFile[];
-  /** Combined `git diff HEAD` patch text (may be truncated). */
+  /** Combined working-tree patch vs `baseRef`, plus untracked file patches (may be truncated). */
   patch: string | null;
+};
+
+export type WorkspaceGitDiscardRequest = {
+  cwd: string;
+  /** Repo-relative path. */
+  path: string;
+};
+
+export type WorkspaceGitDiscardResult =
+  | { ok: true; path: string }
+  | { cancelled?: boolean; error: string; ok: false };
+
+export type WorkspaceOpenReviewRequest = {
+  cwd: string;
+  /** Repo-relative path to preselect in the review window. */
+  path?: string | null;
 };
 
 /** Main → utilityProcess PI host commands. */

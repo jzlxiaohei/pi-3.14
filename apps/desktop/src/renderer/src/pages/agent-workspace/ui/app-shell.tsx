@@ -1,10 +1,12 @@
-import { Command, GitBranch, Moon, Sun } from "lucide-solid";
+import { Command, GitBranch, LoaderCircle, Moon, Sun } from "lucide-solid";
 import { createEffect, createSignal, Show } from "solid-js";
 import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
+import { DiffReviewPanel } from "../../diff-review/route";
 import type { InspectorTab, WorkspaceModel } from "../model";
 import type { AgentWorkspaceSession } from "../session";
 import { AgentTimeline, Composer } from "@/features/agent-timeline/solid";
 import { Button } from "@/shared/ui/button";
+import { Dialog } from "@/shared/ui/dialog";
 import { Inspector } from "./inspector";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { Rail } from "./rail";
@@ -20,9 +22,9 @@ type AppShellProps = {
 const TASKS_MIN = 240;
 const TASKS_MAX = 372;
 const TASKS_DEFAULT = 264;
-const INSPECTOR_MIN = 300;
-const INSPECTOR_MAX = 520;
-const INSPECTOR_DEFAULT = 340;
+const INSPECTOR_MIN = 360;
+const INSPECTOR_MAX = 720;
+const INSPECTOR_DEFAULT = 480;
 
 export function AppShell(props: AppShellProps) {
   const [git, setGit] = createSignal<WorkspaceGitSnapshot | null>(null);
@@ -31,8 +33,13 @@ export function AppShell(props: AppShellProps) {
   const [inspectorOpen, setInspectorOpen] = createSignal(false);
   const [tasksWidth, setTasksWidth] = createSignal(TASKS_DEFAULT);
   const [inspectorWidth, setInspectorWidth] = createSignal(INSPECTOR_DEFAULT);
+  const [reviewOpen, setReviewOpen] = createSignal(false);
+  const [reviewPath, setReviewPath] = createSignal<string | null>(null);
 
   let wasBusy = false;
+  createEffect(() => {
+    document.documentElement.dataset.theme = props.model.theme();
+  });
   createEffect(() => {
     const cwd = props.session.cwd();
     if (!cwd) {
@@ -64,7 +71,11 @@ export function AppShell(props: AppShellProps) {
   function openInspector(tab: InspectorTab) {
     setInspectorOpen(true);
     props.model.setTab(tab);
-    if (tab === "changes") refreshInspector();
+    if (tab === "changes") {
+      // Prefer a review-readable width when opening Changes.
+      setInspectorWidth((width) => Math.max(width, INSPECTOR_DEFAULT));
+      refreshInspector();
+    }
   }
 
   /** Rail: open to tab, or close if that tab is already showing. */
@@ -74,6 +85,18 @@ export function AppShell(props: AppShellProps) {
       return;
     }
     openInspector(tab);
+  }
+
+  function openReview(path?: string | null) {
+    if (!props.session.cwd()) return;
+    setReviewPath(path ?? null);
+    setReviewOpen(true);
+  }
+
+  function closeReview() {
+    setReviewOpen(false);
+    setReviewPath(null);
+    refreshInspector();
   }
 
   return (
@@ -90,8 +113,13 @@ export function AppShell(props: AppShellProps) {
               {props.model.theme() === "light" ? <Moon size={15} /> : <Sun size={15} />}
               Theme
             </Button>
-            <Button variant="secondary">
-              <GitBranch size={15} />
+            <Button variant="secondary" disabled={props.session.isCreatingSession()}>
+              <Show
+                when={props.session.isCreatingSession()}
+                fallback={<GitBranch size={15} />}
+              >
+                <LoaderCircle class="at-spin" size={15} />
+              </Show>
               {git()?.branch ?? props.session.workspaceLabel()}
             </Button>
           </div>
@@ -143,7 +171,7 @@ export function AppShell(props: AppShellProps) {
                 loading={props.session.isCreatingSession()}
                 task={props.model.selectedTask()}
                 status={props.session.status().runStatus}
-                onReviewChanges={() => openInspector("changes")}
+                onReviewChanges={() => openReview()}
                 onToggleInspector={toggleInspector}
               />
               <ToolApprovalBanner
@@ -194,6 +222,7 @@ export function AppShell(props: AppShellProps) {
                   refreshToken={inspectorRefresh()}
                   tab={props.model.tab()}
                   onCollapse={() => setInspectorOpen(false)}
+                  onOpenReview={(path) => openReview(path)}
                   onTabChange={props.model.setTab}
                 />
               </div>
@@ -201,6 +230,26 @@ export function AppShell(props: AppShellProps) {
           </div>
         </div>
       </div>
+
+      <Show when={props.session.cwd()}>
+        {(cwd) => (
+          <Dialog
+            class="orbit-dialog__content--review"
+            open={reviewOpen()}
+            title="Review changes"
+            onOpenChange={(open) => {
+              if (!open) closeReview();
+              else setReviewOpen(true);
+            }}
+          >
+            <DiffReviewPanel
+              cwd={cwd()}
+              initialPath={reviewPath()}
+              onClose={closeReview}
+            />
+          </Dialog>
+        )}
+      </Show>
     </div>
   );
 }

@@ -99,10 +99,10 @@
   --ease-standard: cubic-bezier(.2,0,0,1); --ease-emphasized: cubic-bezier(.2,.8,.2,1);
 
   /* Layout */
-  --rail-width: 68px; --sidebar-width: 240px; --inspector-width: 340px;
+  --rail-width: 68px; --sidebar-width: 240px; --inspector-width: 480px;
   --topbar-height: 52px; --control-height-sm: 30px; --control-height-md: 36px;
   --control-height-lg: 42px; --content-max: 780px;
-  --z-base: 0; --z-sticky: 10; --z-popover: 30;
+  --z-base: 0; --z-sticky: 10; --z-modal: 50; --z-popover: 70;
 }
 
 [data-theme="dark"] {

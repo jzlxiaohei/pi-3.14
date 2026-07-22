@@ -529,11 +529,11 @@
 }
 
 .at-context-pill:disabled {
-  opacity: .7;
-  cursor: default;
+  opacity: .6;
+  cursor: not-allowed;
 }
 
-.at-context-pill:hover {
+.at-context-pill:hover:not(:disabled) {
   background: var(--surface-subtle);
 }
 

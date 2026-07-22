@@ -59,6 +59,7 @@ export function Composer(props: ComposerProps) {
             <button
               class="at-context-pill"
               type="button"
+              disabled={props.disabled}
               title={props.workspaceTitle ?? props.workspaceLabel}
               onClick={props.onSelectWorkspace}
             >

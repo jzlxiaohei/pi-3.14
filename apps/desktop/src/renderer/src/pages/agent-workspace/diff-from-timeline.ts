@@ -1,4 +1,5 @@
 import type { TimelineItem } from "@/features/agent-timeline";
+import type { WorkspaceGitFile } from "../../../../shared/desktop-contracts";
 import type { DiffFile, DiffHunk, DiffLine } from "./model";
 
 /** Build inspector diffs from committed + overlay tool items that carry patches. */
@@ -11,7 +12,7 @@ export function diffFilesFromTimeline(items: TimelineItem[]): DiffFile[] {
   return files;
 }
 
-/** Build diffs from a working-tree `git diff HEAD` patch. */
+/** Build diffs from a working-tree patch (tracked + untracked). */
 export function diffFilesFromGitPatch(patch: string | null | undefined): DiffFile[] {
   if (!patch?.trim()) return [];
   return parseUnifiedDiff(patch, "git-head");
@@ -23,6 +24,46 @@ export function mergeDiffFiles(sessionFiles: DiffFile[], gitFiles: DiffFile[]): 
   for (const file of sessionFiles) byPath.set(file.path, file);
   for (const file of gitFiles) byPath.set(file.path, file);
   return [...byPath.values()];
+}
+
+/**
+ * Merge session + git patches, then ensure every porcelain status path appears
+ * (binary / empty / status-only files still show in the review list).
+ */
+export function mergeReviewDiffFiles(
+  sessionFiles: DiffFile[],
+  gitFiles: DiffFile[],
+  statusFiles: WorkspaceGitFile[],
+): DiffFile[] {
+  const merged = mergeDiffFiles(sessionFiles, gitFiles);
+  const byPath = new Map(merged.map((file) => [file.path, file]));
+
+  for (const status of statusFiles) {
+    const existing = byPath.get(status.path);
+    if (existing) {
+      byPath.set(status.path, {
+        ...existing,
+        status: mapGitStatus(status.status, existing.status),
+      });
+      continue;
+    }
+    byPath.set(status.path, {
+      id: `git-status:${status.path}`,
+      path: status.path,
+      status: mapGitStatus(status.status, "modified"),
+      additions: 0,
+      deletions: 0,
+      hunks: [],
+    });
+  }
+
+  const statusOrder = new Map(statusFiles.map((file, index) => [file.path, index]));
+  return [...byPath.values()].sort((a, b) => {
+    const ai = statusOrder.get(a.path) ?? Number.MAX_SAFE_INTEGER;
+    const bi = statusOrder.get(b.path) ?? Number.MAX_SAFE_INTEGER;
+    if (ai !== bi) return ai - bi;
+    return a.path.localeCompare(b.path);
+  });
 }
 
 export function terminalLinesFromTimeline(items: TimelineItem[]): Array<{
@@ -59,11 +100,14 @@ function parseUnifiedDiff(diff: string, sourceId: string): DiffFile[] {
   let oldPath: string | undefined;
   let hunks: DiffHunk[] = [];
   let current: DiffHunk | null = null;
+  let oldLine = 0;
+  let newLine = 0;
   let additions = 0;
   let deletions = 0;
+  let binary = false;
 
   const flush = () => {
-    if (hunks.length === 0 && additions === 0 && deletions === 0) return;
+    if (hunks.length === 0 && additions === 0 && deletions === 0 && !binary) return;
     files.push({
       id: `${sourceId}:${path}`,
       path,
@@ -72,12 +116,14 @@ function parseUnifiedDiff(diff: string, sourceId: string): DiffFile[] {
       additions,
       deletions,
       hunks,
+      ...(binary ? { binary: true } : {}),
     });
     hunks = [];
     current = null;
     additions = 0;
     deletions = 0;
     oldPath = undefined;
+    binary = false;
   };
 
   for (const line of lines) {
@@ -90,9 +136,14 @@ function parseUnifiedDiff(diff: string, sourceId: string): DiffFile[] {
       }
       continue;
     }
+    if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
+      binary = true;
+      continue;
+    }
     if (line.startsWith("--- ")) {
       const value = line.slice(4).trim();
       if (value !== "/dev/null") oldPath = value.replace(/^a\//, "");
+      else oldPath = "/dev/null";
       continue;
     }
     if (line.startsWith("+++ ")) {
@@ -102,6 +153,8 @@ function parseUnifiedDiff(diff: string, sourceId: string): DiffFile[] {
     }
     const hunkHeader = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
     if (hunkHeader) {
+      oldLine = Number(hunkHeader[1]);
+      newLine = Number(hunkHeader[3]);
       current = {
         id: `${sourceId}:${path}:${hunkHeader[1]}:${hunkHeader[3]}`,
         header: line,
@@ -117,20 +170,38 @@ function parseUnifiedDiff(diff: string, sourceId: string): DiffFile[] {
     if (!current) continue;
     if (line.startsWith("+")) {
       additions += 1;
-      current.lines.push(row(line.slice(1), "added", current.lines.length));
+      current.lines.push(row(line.slice(1), "added", current.lines.length, undefined, newLine));
+      newLine += 1;
     } else if (line.startsWith("-")) {
       deletions += 1;
-      current.lines.push(row(line.slice(1), "removed", current.lines.length));
+      current.lines.push(row(line.slice(1), "removed", current.lines.length, oldLine, undefined));
+      oldLine += 1;
     } else if (line.startsWith(" ") || line === "") {
-      current.lines.push(row(line.startsWith(" ") ? line.slice(1) : line, "context", current.lines.length));
+      current.lines.push(
+        row(line.startsWith(" ") ? line.slice(1) : line, "context", current.lines.length, oldLine, newLine),
+      );
+      oldLine += 1;
+      newLine += 1;
     }
   }
   flush();
   return files;
 }
 
-function row(content: string, kind: DiffLine["kind"], index: number): DiffLine {
-  return { id: `${kind}-${index}-${content.slice(0, 12)}`, kind, content };
+function row(
+  content: string,
+  kind: DiffLine["kind"],
+  index: number,
+  oldLineNumber?: number,
+  newLineNumber?: number,
+): DiffLine {
+  return {
+    id: `${kind}-${index}-${oldLineNumber ?? "x"}-${newLineNumber ?? "x"}-${content.slice(0, 12)}`,
+    kind,
+    content,
+    ...(oldLineNumber !== undefined ? { oldLine: oldLineNumber } : {}),
+    ...(newLineNumber !== undefined ? { newLine: newLineNumber } : {}),
+  };
 }
 
 function pathStatus(
@@ -141,6 +212,18 @@ function pathStatus(
 ): DiffFile["status"] {
   if (oldPath === "/dev/null" || (!oldPath && additions > 0 && deletions === 0)) return "added";
   if (path === "/dev/null") return "deleted";
-  if (oldPath && oldPath !== path) return "renamed";
+  if (oldPath && oldPath !== path && oldPath !== "/dev/null") return "renamed";
   return "modified";
+}
+
+function mapGitStatus(
+  gitStatus: WorkspaceGitFile["status"],
+  fallback: DiffFile["status"],
+): DiffFile["status"] {
+  if (gitStatus === "untracked") return "untracked";
+  if (gitStatus === "added") return "added";
+  if (gitStatus === "deleted") return "deleted";
+  if (gitStatus === "renamed") return "renamed";
+  if (gitStatus === "modified") return "modified";
+  return fallback;
 }

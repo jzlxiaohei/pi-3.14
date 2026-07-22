@@ -5,10 +5,14 @@ import type { WorkspaceDirEntry } from "../../../../../../shared/desktop-contrac
 type WorkspaceTreeProps = {
   cwd: string | null;
   changedPaths?: string[];
+  /** When true, start collapsed (Changes review prefers diff space). */
+  defaultCollapsed?: boolean;
+  onOpenPath?: (path: string) => void;
 };
 
 export function WorkspaceTree(props: WorkspaceTreeProps) {
   const [rootKey, setRootKey] = createSignal(0);
+  const [collapsed, setCollapsed] = createSignal(props.defaultCollapsed === true);
   const changed = () => new Set(props.changedPaths ?? []);
 
   createEffect(() => {
@@ -16,30 +20,56 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
     setRootKey((value) => value + 1);
   });
 
+  createEffect(() => {
+    setCollapsed(props.defaultCollapsed === true);
+  });
+
   return (
-    <div class="tree-panel">
+    <div class="tree-panel" classList={{ "tree-panel--collapsed": collapsed() }}>
       <div class="tree-head">
-        <span>Workspace files</span>
-        <button type="button" class="tree-refresh" aria-label="Refresh file tree" onClick={() => setRootKey((v) => v + 1)}>
-          <RefreshCw size={15} />
+        <button
+          type="button"
+          class="tree-head__toggle"
+          aria-expanded={!collapsed()}
+          onClick={() => setCollapsed((value) => !value)}
+        >
+          {collapsed() ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          <span>Workspace files</span>
         </button>
+        <Show when={!collapsed()}>
+          <button
+            type="button"
+            class="tree-refresh"
+            aria-label="Refresh file tree"
+            onClick={() => setRootKey((v) => v + 1)}
+          >
+            <RefreshCw size={15} />
+          </button>
+        </Show>
       </div>
-      <Show
-        when={props.cwd}
-        fallback={<p class="inspector-empty">Select a workspace to browse files.</p>}
-      >
-        {(cwd) => (
-          <div class="workspace-tree__list" data-key={rootKey()}>
-            <TreeFolder
-              cwd={cwd()}
-              entry={{ name: cwd().split(/[\\/]/).filter(Boolean).at(-1) ?? cwd(), path: "", type: "folder" }}
-              depth={0}
-              changed={changed()}
-              defaultOpen
-              reloadToken={rootKey()}
-            />
-          </div>
-        )}
+      <Show when={!collapsed()}>
+        <Show
+          when={props.cwd}
+          fallback={<p class="inspector-empty">Select a workspace to browse files.</p>}
+        >
+          {(cwd) => (
+            <div class="workspace-tree__list" data-key={rootKey()}>
+              <TreeFolder
+                cwd={cwd()}
+                entry={{
+                  name: cwd().split(/[\\/]/).filter(Boolean).at(-1) ?? cwd(),
+                  path: "",
+                  type: "folder",
+                }}
+                depth={0}
+                changed={changed()}
+                defaultOpen
+                reloadToken={rootKey()}
+                onOpenPath={props.onOpenPath}
+              />
+            </div>
+          )}
+        </Show>
       </Show>
     </div>
   );
@@ -52,6 +82,7 @@ type NodeProps = {
   changed: Set<string>;
   defaultOpen?: boolean;
   reloadToken: number;
+  onOpenPath?: (path: string) => void;
 };
 
 function TreeFolder(props: NodeProps) {
@@ -113,10 +144,14 @@ function TreeFolder(props: NodeProps) {
       </button>
       <Show when={open()}>
         <Show when={loading()}>
-          <p class="tree-muted" style={{ "padding-left": `${28 + props.depth * 14}px` }}>Loading…</p>
+          <p class="tree-muted" style={{ "padding-left": `${28 + props.depth * 14}px` }}>
+            Loading…
+          </p>
         </Show>
         <Show when={error()}>
-          <p class="tree-muted" style={{ "padding-left": `${28 + props.depth * 14}px` }}>{error()}</p>
+          <p class="tree-muted" style={{ "padding-left": `${28 + props.depth * 14}px` }}>
+            {error()}
+          </p>
         </Show>
         <For each={children() ?? []}>
           {(child) =>
@@ -127,11 +162,15 @@ function TreeFolder(props: NodeProps) {
                 depth={props.depth + 1}
                 changed={props.changed}
                 reloadToken={props.reloadToken}
+                onOpenPath={props.onOpenPath}
               />
             ) : (
-              <div
+              <button
+                type="button"
                 class="tree-row workspace-tree__item"
+                classList={{ "is-changed": props.changed.has(child.path) }}
                 style={{ "padding-left": `${28 + props.depth * 14}px` }}
+                onClick={() => props.onOpenPath?.(child.path)}
               >
                 <span class="workspace-tree__label">
                   <File size={15} />
@@ -140,7 +179,7 @@ function TreeFolder(props: NodeProps) {
                 <Show when={props.changed.has(child.path)}>
                   <b>M</b>
                 </Show>
-              </div>
+              </button>
             )
           }
         </For>

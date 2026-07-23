@@ -1,6 +1,6 @@
 import { Command, GitBranch, LoaderCircle, Moon, Sun } from "lucide-solid";
 import { createEffect, createSignal, Show } from "solid-js";
-import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
+import type { TaskWorkflow, WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
 import { DiffReviewPanel } from "../../diff-review/route";
 import type { InspectorTab, WorkspaceModel } from "../model";
 import type { AgentWorkspaceSession } from "../session";
@@ -14,7 +14,6 @@ import { TaskHeader } from "./task-header";
 import { TaskSidebar } from "./task-sidebar";
 import { ToolApprovalBanner } from "./tool-approval-banner";
 import { WorkflowStrip } from "./workflow-strip";
-import type { TaskWorkflow } from "../../../../../shared/desktop-contracts";
 
 type AppShellProps = {
   model: WorkspaceModel;

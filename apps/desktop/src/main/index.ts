@@ -148,7 +148,10 @@ app.whenReady().then(() => {
     return piRuntime.activateTask(event.sender, taskId);
   });
   ipcMain.handle("pi:tasks:update", (_event, request: WorkspaceTaskUpdate) => {
-    return piRuntime.updateTask(request.id, { workflow: request.workflow });
+    return piRuntime.updateTask(request.id, {
+      title: request.title,
+      workflow: request.workflow,
+    });
   });
 
   ipcMain.handle("pi:session:pick-workspace", (event) => {

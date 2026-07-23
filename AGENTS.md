@@ -40,3 +40,7 @@ Use the default Matt engineering skill triage labels: `needs-triage`, `needs-inf
 ### Domain docs
 
 Use single-context domain docs: root `CONTEXT.md` and repo-wide ADRs in `docs/adr/`. See `docs/agents/domain.md`.
+
+### Reusable skills
+
+When a flow looks **stable and likely to repeat**, tell the user it could become a Skill (`SKILL.md` under `.pi/skills`, optional helper script). Prefer proposing extraction over silently inventing automation. One-off work stays in the chat; do not write skills or scripts unless the user asks or clearly accepts the suggestion.

@@ -117,17 +117,18 @@ export class PiRuntimeManager {
     const task =
       options.taskId != null
         ? await this.tasks.update(options.taskId, {
-            cwd,
-            sessionPath: state.sessionPath,
-            sessionId: state.sessionId,
-            status: "idle",
-          })
+          cwd,
+          sessionPath: state.sessionPath,
+          sessionId: state.sessionId,
+          status: "idle",
+          ...(options.title?.trim() ? { title: options.title.trim() } : {}),
+        })
         : await this.tasks.create({
-            cwd,
-            sessionPath: state.sessionPath,
-            sessionId: state.sessionId,
-            title: folderTitle(cwd),
-          });
+          cwd,
+          sessionPath: state.sessionPath,
+          sessionId: state.sessionId,
+          title: options.title?.trim() || folderTitle(cwd),
+        });
 
     if (!task) throw new Error("Failed to persist workspace task");
     this.activeTaskId = task.id;
@@ -151,7 +152,7 @@ export class PiRuntimeManager {
       return { task, state, timeline };
     }
 
-    await this.abort().catch(() => {});
+    await this.abort().catch(() => { });
 
     const sessionPath =
       task.sessionPath && (await fileExists(task.sessionPath)) ? task.sessionPath : null;
@@ -198,15 +199,15 @@ export class PiRuntimeManager {
         : undefined;
       const task = this.activeTaskId
         ? await this.tasks.update(
-            this.activeTaskId,
-            {
-              sessionPath: result.sessionPath,
-              sessionId: result.sessionId,
-              status: result.stopReason === "error" ? "error" : "done",
-              ...(title ? { title } : {}),
-            },
-            { moveToFront: true },
-          )
+          this.activeTaskId,
+          {
+            sessionPath: result.sessionPath,
+            sessionId: result.sessionId,
+            status: result.stopReason === "error" ? "error" : "done",
+            ...(title ? { title } : {}),
+          },
+          { moveToFront: true },
+        )
         : null;
 
       return { ...result, timeline, task };
@@ -221,7 +222,7 @@ export class PiRuntimeManager {
   async abort(): Promise<void> {
     this.rejectAllApprovals("Aborted");
     if (!this.child || !this.hostBound) return;
-    await this.send({ id: randomUUID(), type: "abort" }).catch(() => {});
+    await this.send({ id: randomUUID(), type: "abort" }).catch(() => { });
     if (this.activeTaskId) {
       await this.tasks.setStatus(this.activeTaskId, "idle");
     }
@@ -275,7 +276,10 @@ export class PiRuntimeManager {
 
   async updateTask(
     id: string,
-    patch: { workflow?: TaskWorkflow | null },
+    patch: {
+      title?: string;
+      workflow?: TaskWorkflow | null;
+    },
   ): Promise<WorkspaceTask | null> {
     return this.tasks.update(id, patch);
   }
@@ -283,7 +287,7 @@ export class PiRuntimeManager {
   async dispose(): Promise<void> {
     this.rejectAllApprovals("Session disposed");
     if (this.child && this.childReady) {
-      await this.send({ id: randomUUID(), type: "dispose" }).catch(() => {});
+      await this.send({ id: randomUUID(), type: "dispose" }).catch(() => { });
     }
     this.killChild();
     this.subscribedWebContents = null;

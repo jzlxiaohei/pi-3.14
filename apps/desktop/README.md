@@ -67,6 +67,14 @@ src/renderer/src/
   styles/              tokens, base CSS, shared UI CSS, page CSS
 ```
 
+## Reusable skills (direction)
+
+Reuse means PI Skills (`SKILL.md` + optional scripts), stored for **PI interop** (personal agent skills library; PIE manages categories/selection in-app). Chat-side intent later:
+
+1. Help extract a Skill (separate session; user confirms)
+2. Search/select skills for the current chat
+3. Standing guidance so the model can **suggest** extraction
+
 ## Engineering path (optional)
 
 PIE can show a task-level **Engineering path** strip (step N/M + Next/Skip). Progress is

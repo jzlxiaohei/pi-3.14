@@ -44,6 +44,7 @@ export type WorkspaceTask = {
 
 export type WorkspaceTaskUpdate = {
   id: string;
+  title?: string;
   /** Set to attach/update; `null` clears the playbook. */
   workflow?: TaskWorkflow | null;
 };
@@ -53,6 +54,7 @@ export type PiSessionCreateOptions = {
   /** Resume this JSONL path when set. */
   sessionPath?: string | null;
   taskId?: string;
+  title?: string;
 };
 
 export type PiWorkspacePickResult =

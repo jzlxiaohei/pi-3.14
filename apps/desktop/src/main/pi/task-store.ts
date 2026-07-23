@@ -18,7 +18,7 @@ export class TaskStore {
   private data: TaskStoreFile = EMPTY;
   private loaded = false;
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string) { }
 
   async load(): Promise<TaskStoreFile> {
     if (this.loaded) return this.data;

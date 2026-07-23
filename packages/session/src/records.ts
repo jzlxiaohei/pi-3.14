@@ -32,6 +32,17 @@ export function textContent(value: JsonValue | undefined): string {
     .join("\n");
 }
 
+export function thinkingContent(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((block) => {
+      const item = jsonObject(block);
+      return item?.type === "thinking" && typeof item.thinking === "string" ? item.thinking : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function toolCalls(entry: PiSessionEntrySnapshot): Array<{
   id: string;
   name: string;

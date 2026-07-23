@@ -2,10 +2,12 @@ import type { PiThinkingLevel } from "@pi-3.14/model";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session } from "electron";
 import { fileURLToPath } from "node:url";
 import { installMattSkills, readMattSkillsStatus } from "./pi/install-matt-skills";
+import { personalSkillsDir, writePersonalSkill } from "./pi/personal-skills";
 import { PiRuntimeManager } from "./pi/runtime-manager";
 import { listWorkspaceChildren } from "./pi/workspace-fs";
 import { discardWorkspaceGitFile, readWorkspaceGit } from "./pi/workspace-git";
 import type {
+  PersonalSkillWriteRequest,
   WorkspaceGitDiscardRequest,
   WorkspaceGitRequest,
   WorkspaceInstallMattSkillsRequest,
@@ -154,6 +156,11 @@ app.whenReady().then(() => {
     });
   });
 
+  ipcMain.handle("skills:personal-dir", () => ({ dir: personalSkillsDir() }));
+  ipcMain.handle("skills:write-personal", (_event, request: PersonalSkillWriteRequest) => {
+    return writePersonalSkill(request);
+  });
+
   ipcMain.handle("pi:session:pick-workspace", (event) => {
     return piRuntime.pickWorkspace(event.sender);
   });
@@ -195,6 +202,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("pi:session:get-timeline", () => {
     return piRuntime.getTimeline();
+  });
+
+  ipcMain.handle("pi:session:export", (event) => {
+    return piRuntime.exportSession(event.sender);
   });
 
   ipcMain.handle("pi:session:get-pending-approval", () => {

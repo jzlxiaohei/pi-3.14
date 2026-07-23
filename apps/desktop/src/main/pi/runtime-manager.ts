@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { copyFile } from "node:fs/promises";
+import { basename } from "node:path";
 import type {
   PiHostEvent,
   PiHostState,
@@ -15,7 +17,7 @@ import {
   utilityProcess,
   type WebContents,
 } from "electron";
-import type { OpenDialogOptions } from "electron";
+import type { OpenDialogOptions, SaveDialogOptions } from "electron";
 import hostModulePath from "./host-process?modulePath";
 import type {
   PiActivateTaskResult,
@@ -24,6 +26,7 @@ import type {
   PiPromptResult,
   PiSessionCreateOptions,
   PiSessionCreateResult,
+  PiSessionExportResult,
   PiTasksBootstrap,
   PiTimelineSnapshot,
   PiToolApprovalReply,
@@ -263,6 +266,41 @@ export class PiRuntimeManager {
       type: "set_thinking_level",
       level,
     })) as PiHostState;
+  }
+
+  /** Copy the active session JSONL via a Save dialog (local share / backup). */
+  async exportSession(sender: WebContents): Promise<PiSessionExportResult> {
+    let sessionPath: string | null = null;
+    if (this.activeTaskId) {
+      const task = await this.tasks.get(this.activeTaskId);
+      sessionPath = task?.sessionPath ?? null;
+    }
+    if (!sessionPath && this.hostBound && this.childReady) {
+      try {
+        sessionPath = (await this.getState()).sessionPath;
+      } catch {
+        sessionPath = null;
+      }
+    }
+    if (!sessionPath || !(await fileExists(sessionPath))) {
+      return { ok: false, error: "还没有可导出的 session 文件（先发一条消息生成会话）" };
+    }
+
+    const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+    const options: SaveDialogOptions = {
+      title: "导出 session",
+      buttonLabel: "导出",
+      defaultPath: basename(sessionPath),
+      filters: [{ name: "PI Session", extensions: ["jsonl"] }],
+    };
+    const pick = window
+      ? await dialog.showSaveDialog(window, options)
+      : await dialog.showSaveDialog(options);
+    if (pick.canceled || !pick.filePath) return { ok: false, cancelled: true };
+
+    const dest = pick.filePath.endsWith(".jsonl") ? pick.filePath : `${pick.filePath}.jsonl`;
+    await copyFile(sessionPath, dest);
+    return { ok: true, path: dest };
   }
 
   async getTimeline(): Promise<PiTimelineSnapshot> {

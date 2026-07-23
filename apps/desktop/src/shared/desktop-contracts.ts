@@ -57,6 +57,18 @@ export type PiSessionCreateOptions = {
   title?: string;
 };
 
+/** Write a skill into the user's PI personal library (~/.pi/agent/skills). */
+export type PersonalSkillWriteRequest = {
+  /** Folder name under ~/.pi/agent/skills */
+  slug: string;
+  skillMd: string;
+  overwrite?: boolean;
+};
+
+export type PersonalSkillWriteResult =
+  | { ok: true; slug: string; skillPath: string; skillsDir: string }
+  | { ok: false; error: string };
+
 export type PiWorkspacePickResult =
   | {
       cancelled: true;
@@ -65,6 +77,12 @@ export type PiWorkspacePickResult =
       cancelled: false;
       cwd: string;
     };
+
+/** Save a copy of the active task's PI session JSONL. */
+export type PiSessionExportResult =
+  | { ok: true; path: string }
+  | { ok: false; cancelled: true }
+  | { ok: false; cancelled?: false; error: string };
 
 export type PiTimelineItem =
   | {
@@ -78,6 +96,7 @@ export type PiTimelineItem =
       kind: "assistant";
       stopReason: PiTerminalStopReason | null;
       text: string;
+      thinking?: string;
       timestamp: number;
     }
   | {

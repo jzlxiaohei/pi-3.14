@@ -33,12 +33,13 @@ export function projectSessionToTimeline(snapshot: PiSessionSnapshot): PiTimelin
     }
 
     if (message.role === "assistant") {
-      if (message.text.trim()) {
+      if (message.text.trim() || message.thinking?.trim()) {
         items.push({
           id: message.sourceEntryId,
           kind: "assistant",
           stopReason: terminalStopReason(entry),
           text: message.text,
+          ...(message.thinking?.trim() ? { thinking: message.thinking } : {}),
           timestamp,
         });
       }

@@ -5,10 +5,13 @@ import type {
   PiPromptResult,
   PiSessionCreateOptions,
   PiSessionCreateResult,
+  PiSessionExportResult,
   PiTasksBootstrap,
   PiTimelineSnapshot,
   PiToolApprovalReply,
   PiToolApprovalRequest,
+  PersonalSkillWriteRequest,
+  PersonalSkillWriteResult,
   PiWorkspacePickResult,
   WorkspaceGitDiscardRequest,
   WorkspaceGitDiscardResult,
@@ -56,6 +59,8 @@ const api = {
       ipcRenderer.invoke("pi:session:set-thinking-level", level) as Promise<PiHostState>,
     getTimeline: () =>
       ipcRenderer.invoke("pi:session:get-timeline") as Promise<PiTimelineSnapshot>,
+    exportSession: () =>
+      ipcRenderer.invoke("pi:session:export") as Promise<PiSessionExportResult>,
     getPendingApproval: () =>
       ipcRenderer.invoke("pi:session:get-pending-approval") as Promise<PiToolApprovalRequest | null>,
     pickWorkspace: () =>
@@ -82,6 +87,11 @@ const api = {
     },
     prompt: (text: string) =>
       ipcRenderer.invoke("pi:session:prompt", text) as Promise<PiPromptResult>,
+  },
+  skills: {
+    personalDir: () => ipcRenderer.invoke("skills:personal-dir") as Promise<{ dir: string }>,
+    writePersonal: (request: PersonalSkillWriteRequest) =>
+      ipcRenderer.invoke("skills:write-personal", request) as Promise<PersonalSkillWriteResult>,
   },
   workspace: {
     list: (request: WorkspaceListRequest) =>

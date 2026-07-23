@@ -6,6 +6,7 @@ import {
   messageRole,
   modelRef,
   textContent,
+  thinkingContent,
   thinkingLevel,
   toolCalls,
 } from "./records.js";
@@ -166,11 +167,13 @@ function toEffectiveMessage(entry: PiSessionEntrySnapshot): PiEffectiveMessage[]
   }
   if (role === "assistant") {
     const calls = toolCalls(entry);
+    const thinking = thinkingContent(message.content);
     return [
       {
         sourceEntryId: entry.id,
         role: "assistant",
         text: textContent(message.content),
+        ...(thinking ? { thinking } : {}),
         ...(calls.length > 0 ? { toolCalls: calls } : {}),
       },
     ];

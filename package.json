@@ -23,6 +23,8 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "marked": "^18.0.6"
+    "dompurify": "^3.4.12",
+    "marked": "^18.0.6",
+    "marked-highlight": "^2.2.4"
   }
 }

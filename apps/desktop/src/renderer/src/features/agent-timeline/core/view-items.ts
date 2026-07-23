@@ -4,7 +4,7 @@ export type TimelineViewEntry =
   | { type: "item"; item: TimelineItem }
   | { type: "tool_group"; id: string; tools: TimelineToolCall[] };
 
-/** Collapse consecutive settled tools into a single group when there are 2+. */
+/** Keep every consecutive tool run in one stable group from the first tool onward. */
 export function buildTimelineViewEntries(
   items: TimelineItem[],
   options: {
@@ -14,7 +14,7 @@ export function buildTimelineViewEntries(
 ): TimelineViewEntry[] {
   const visible = items.filter((item) => {
     if (item.kind !== "assistant") return true;
-    if (item.text.trim().length > 0) return true;
+    if (item.text.trim().length > 0 || Boolean(item.thinking?.trim())) return true;
     return options.runStatus === "streaming" && item.id === items.at(-1)?.id;
   });
 
@@ -23,28 +23,16 @@ export function buildTimelineViewEntries(
 
   const flushTools = () => {
     if (pendingTools.length === 0) return;
-    if (pendingTools.length === 1) {
-      entries.push({ type: "item", item: pendingTools[0]! });
-    } else {
-      entries.push({
-        type: "tool_group",
-        // Prefer toolCallId so group identity survives live → JSONL remount.
-        id: `tool-group-${pendingTools.map((tool) => tool.toolCallId).join(",")}`,
-        tools: pendingTools,
-      });
-    }
+    entries.push({
+      type: "tool_group",
+      id: `tool-group-${pendingTools[0]!.toolCallId}`,
+      tools: pendingTools,
+    });
     pendingTools = [];
   };
 
   for (const item of visible) {
     if (item.kind !== "tool") {
-      flushTools();
-      entries.push({ type: "item", item });
-      continue;
-    }
-    const keepExpanded =
-      item.status === "running" || options.pendingApprovalToolCallId === item.toolCallId;
-    if (keepExpanded) {
       flushTools();
       entries.push({ type: "item", item });
       continue;

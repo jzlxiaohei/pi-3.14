@@ -65,6 +65,7 @@
 }
 
 .icon-button {
+  position: relative;
   width: var(--control-height-md);
   height: var(--control-height-md);
   border-radius: 10px;
@@ -86,6 +87,37 @@
 
 .icon-button--ghost[data-active="true"] {
   color: var(--action-primary-hover);
+}
+
+.icon-button--has-changes:not(:disabled) {
+  color: var(--action-primary);
+  background: color-mix(in srgb, var(--action-primary) 12%, transparent);
+}
+
+.icon-button--has-changes:not(:disabled):hover {
+  color: var(--action-primary-hover);
+  background: color-mix(in srgb, var(--action-primary) 18%, transparent);
+  box-shadow: none;
+}
+
+.icon-button__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--action-primary);
+  color: var(--text-inverse);
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surface-panel-solid);
+  pointer-events: none;
 }
 
 .icon-button--primary {

@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import type { TimelineToolCall } from "../core";
 
 /**
  * Persist tool/group expand chrome across timeline remounts (live overlay → JSONL snapshot).
@@ -29,6 +30,29 @@ export function toolOutputKey(toolCallId: string): string {
   return `tool-output:${toolCallId}`;
 }
 
-export function toolGroupKey(toolCallIds: string[]): string {
-  return `tool-group:${toolCallIds.join(",")}`;
+/** Stable group key — first tool in the consecutive run. */
+export function toolGroupKey(anchorToolCallId: string): string {
+  return `tool-group:${anchorToolCallId}`;
+}
+
+/**
+ * Group open state. Explicit true/false wins; a new running group starts open,
+ * then settles closed unless the user opened the group or one of its sections.
+ */
+export function isToolGroupOpen(
+  anchorToolCallId: string,
+  tools: TimelineToolCall[],
+  active = false,
+): boolean {
+  const key = toolGroupKey(anchorToolCallId);
+  const stored = openByKey()[key];
+  if (stored === true) return true;
+  if (stored === false) return false;
+  return tools.some(
+    (tool) =>
+      active ||
+      tool.status === "running" ||
+      timelineSectionOpen(toolArgsKey(tool.toolCallId)) ||
+      timelineSectionOpen(toolOutputKey(tool.toolCallId)),
+  );
 }

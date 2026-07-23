@@ -138,6 +138,8 @@ export function reduceTimelineEvent(state: TimelineState, event: PiHostEvent): T
       };
     case "text_delta":
       return appendAssistantText(state, event.text, event.at);
+    case "thinking_delta":
+      return appendAssistantThinking(state, event.text, event.at);
     case "tool_start":
       return appendToolStart(state, event);
     case "tool_update":
@@ -150,11 +152,11 @@ export function reduceTimelineEvent(state: TimelineState, event: PiHostEvent): T
       );
     case "message_end":
       if (event.role !== "assistant") return state;
-      // toolUse shells with no visible text are not chat turns — skip the placeholder.
+      // toolUse shells with no visible text are not chat turns — keep streamed thinking, close the bubble.
       if (event.stopReason === "toolUse" && !event.text.trim()) {
-        return { ...state, activeAssistantId: null };
+        return closeAssistantAfterTools(state, event.thinking, event.at);
       }
-      return finishAssistantMessage(state, event.text, event.stopReason, event.at);
+      return finishAssistantMessage(state, event.text, event.thinking, event.stopReason, event.at);
     case "queue_update":
       return state;
     case "compaction":
@@ -190,20 +192,64 @@ function appendAssistantText(state: TimelineState, delta: string, at: number): T
   };
 }
 
+function appendAssistantThinking(state: TimelineState, delta: string, at: number): TimelineState {
+  const assistant = getOrCreateAssistant(state, at);
+  return {
+    ...assistant.state,
+    items: assistant.state.items.map((item) =>
+      item.id === assistant.id && item.kind === "assistant"
+        ? { ...item, thinking: `${item.thinking ?? ""}${delta}` }
+        : item,
+    ),
+  };
+}
+
+function closeAssistantAfterTools(
+  state: TimelineState,
+  thinking: string | undefined,
+  at: number,
+): TimelineState {
+  if (!state.activeAssistantId) {
+    if (!thinking?.trim()) return { ...state, activeAssistantId: null };
+    const assistant = getOrCreateAssistant(state, at);
+    return {
+      ...assistant.state,
+      activeAssistantId: null,
+      items: assistant.state.items.map((item) =>
+        item.id === assistant.id && item.kind === "assistant"
+          ? { ...item, thinking: thinking || item.thinking }
+          : item,
+      ),
+    };
+  }
+  return {
+    ...state,
+    activeAssistantId: null,
+    items: state.items.map((item) =>
+      item.id === state.activeAssistantId && item.kind === "assistant"
+        ? { ...item, thinking: thinking?.trim() ? thinking : item.thinking }
+        : item,
+    ),
+  };
+}
+
 function finishAssistantMessage(
   state: TimelineState,
   text: string,
+  thinking: string | undefined,
   stopReason: PiStopReason | undefined,
   at: number,
 ): TimelineState {
   const assistant = getOrCreateAssistant(state, at);
-  const nextText = text || assistant.state.items.find(
+  const current = assistant.state.items.find(
     (item): item is TimelineAssistantMessage => item.id === assistant.id && item.kind === "assistant",
-  )?.text || "";
+  );
+  const nextText = text || current?.text || "";
+  const nextThinking = thinking?.trim() ? thinking : current?.thinking;
   const terminal = stopReason !== undefined && isTerminalStopReason(stopReason);
 
-  // Drop empty terminal assistants (e.g. thinking-only content with no text parts).
-  if (!nextText.trim() && terminal) {
+  // Drop empty terminal assistants with neither answer nor thinking.
+  if (!nextText.trim() && !nextThinking?.trim() && terminal) {
     return {
       ...assistant.state,
       activeAssistantId: null,
@@ -225,6 +271,7 @@ function finishAssistantMessage(
             ...item,
             stopReason: terminal ? stopReason : item.stopReason,
             text: nextText,
+            ...(nextThinking ? { thinking: nextThinking } : {}),
           }
         : item,
     ),

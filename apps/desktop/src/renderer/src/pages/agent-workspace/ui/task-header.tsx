@@ -1,34 +1,34 @@
-import { Check, Copy, Files, GitBranch, LoaderCircle, PanelRight, Terminal } from "lucide-solid";
-import { Show } from "solid-js";
-import type { InspectorTab, TaskSummary } from "../model";
+import { Download, GitBranch, GitCompareArrows, LoaderCircle, PanelRight, Route, X } from "lucide-solid";
+import { Show, createSignal } from "solid-js";
 import type { TimelineRunStatus } from "@/features/agent-timeline";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
+import type { TaskSummary } from "../model";
 
 type TaskHeaderProps = {
   branch?: string | null;
   changeCount?: number;
   inspectorOpen?: boolean;
-  inspectorTab?: InspectorTab;
   loading?: boolean;
+  /** Playbook title when this task has an engineering path. */
+  playbookTitle?: string | null;
+  canExportSession?: boolean;
+  onClearPlaybook?: () => void;
+  onExportSession?: () => void;
   onReviewChanges?: () => void;
-  onToggleInspector?: (tab: InspectorTab) => void;
-  /** Expand/collapse the whole right inspector rail. */
   onToggleInspectorPanel?: () => void;
   status: TimelineRunStatus;
   task: TaskSummary | null;
 };
 
 export function TaskHeader(props: TaskHeaderProps) {
+  const [metaOpen, setMetaOpen] = createSignal(false);
+  const changeCount = () => props.changeCount ?? 0;
   const meta = () => {
     const branch = props.branch ?? "main";
     const repo = props.task?.repo;
     return repo ? `${branch} · ${repo}` : branch;
   };
-
-  const filesActive = () => props.inspectorOpen && props.inspectorTab === "files";
-  const terminalActive = () => props.inspectorOpen && props.inspectorTab === "terminal";
-  const changeCount = () => props.changeCount ?? 0;
 
   return (
     <header class="task-header">
@@ -40,38 +40,88 @@ export function TaskHeader(props: TaskHeaderProps) {
           </span>
           <h1 title={props.task?.title ?? undefined}>{props.task?.title ?? "Start a task"}</h1>
         </div>
-        <p class="task-meta" title={props.task?.cwd ?? undefined}>
-          <GitBranch size={14} /> {meta()}
-        </p>
+        <div class="task-meta-wrap">
+          <button
+            type="button"
+            class="task-meta"
+            disabled={!props.task || props.loading}
+            title="Task details"
+            onClick={() => setMetaOpen((open) => !open)}
+          >
+            <GitBranch size={14} /> {meta()}
+            <Show when={props.playbookTitle}>
+              <span class="task-meta__path">
+                <Route size={12} /> {props.playbookTitle}
+              </span>
+            </Show>
+          </button>
+          <Show when={metaOpen() && props.task}>
+            <div class="task-meta-popover" role="dialog" aria-label="Task details">
+              <div class="task-meta-popover__head">
+                <strong>Task details</strong>
+                <IconButton label="Close" size="sm" onClick={() => setMetaOpen(false)}>
+                  <X size={14} />
+                </IconButton>
+              </div>
+              <dl class="task-meta-popover__list">
+                <div>
+                  <dt>Title</dt>
+                  <dd>{props.task!.title}</dd>
+                </div>
+                <div>
+                  <dt>Branch</dt>
+                  <dd>{props.branch ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>Workspace</dt>
+                  <dd>
+                    <code>{props.task!.cwd}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Engineering path</dt>
+                  <dd>{props.playbookTitle ?? "None (free chat)"}</dd>
+                </div>
+              </dl>
+              <Show when={props.playbookTitle && props.onClearPlaybook}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    props.onClearPlaybook?.();
+                    setMetaOpen(false);
+                  }}
+                >
+                  Clear path
+                </Button>
+              </Show>
+            </div>
+          </Show>
+        </div>
       </div>
       <div class="header-actions">
-        <IconButton
-          label={filesActive() ? "Hide files" : "Show files"}
-          size="sm"
-          active={filesActive()}
-          disabled={props.loading}
-          onClick={() => props.onToggleInspector?.("files")}
+        <Button
+          variant="secondary"
+          disabled={props.loading || !props.canExportSession}
+          onClick={() => props.onExportSession?.()}
         >
-          <Files size={16} />
-        </IconButton>
-        <IconButton
-          label={terminalActive() ? "Hide terminal" : "Show terminal"}
-          size="sm"
-          active={terminalActive()}
-          disabled={props.loading}
-          onClick={() => props.onToggleInspector?.("terminal")}
-        >
-          <Terminal size={16} />
-        </IconButton>
-        <Button variant="secondary" disabled={props.loading}>
-          <Copy size={15} /> Share
+          <Download size={15} /> 导出 session
         </Button>
-        <Show when={changeCount() > 0}>
-          <Button variant="primary" disabled={props.loading} onClick={() => props.onReviewChanges?.()}>
-            <Check size={15} strokeWidth={2} /> Review {changeCount()}{" "}
-            {changeCount() === 1 ? "change" : "changes"}
-          </Button>
-        </Show>
+        <IconButton
+          label={
+            changeCount() > 0
+              ? `Review ${changeCount()} ${changeCount() === 1 ? "change" : "changes"}`
+              : "No changes to review"
+          }
+          size="sm"
+          disabled={props.loading || changeCount() === 0}
+          classList={{ "icon-button--has-changes": changeCount() > 0 }}
+          onClick={() => props.onReviewChanges?.()}
+        >
+          <GitCompareArrows size={16} />
+          <Show when={changeCount() > 0}>
+            <span class="icon-button__badge">{changeCount() > 99 ? "99+" : changeCount()}</span>
+          </Show>
+        </IconButton>
         <IconButton
           label={props.inspectorOpen ? "Collapse inspector" : "Expand inspector"}
           size="sm"

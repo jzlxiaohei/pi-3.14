@@ -35,6 +35,7 @@ export interface PiHostState {
 export type PiHostEvent =
   | { type: "agent_start"; at: number }
   | { type: "text_delta"; at: number; text: string }
+  | { type: "thinking_delta"; at: number; text: string }
   | {
       type: "tool_start";
       at: number;
@@ -62,6 +63,8 @@ export type PiHostEvent =
       at: number;
       role: string;
       text: string;
+      /** Model reasoning/thinking blocks, when the provider streams them. */
+      thinking?: string;
       stopReason?: PiStopReason;
     }
   | {

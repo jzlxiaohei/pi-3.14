@@ -1,4 +1,5 @@
 import { ArrowRight, Code2, FolderOpen, Square } from "lucide-solid";
+import type { JSX } from "solid-js";
 import { Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Select, type SelectOption } from "@/shared/ui/select";
@@ -23,6 +24,7 @@ type ComposerProps = {
   thinkingLevel: string;
   thinkingOptions: SelectOption[];
   thinkingValue: string | null;
+  toolbarAction?: JSX.Element;
   value: string;
   workspaceLabel: string;
   workspaceTitle?: string;
@@ -118,6 +120,7 @@ export function Composer(props: ComposerProps) {
             </Show>
           </div>
           <div>
+            {props.toolbarAction}
             <Show
               when={props.modelOptions.length > 0}
               fallback={<span class="at-model-pill">{props.modelLabel}</span>}

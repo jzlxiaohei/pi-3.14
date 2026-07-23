@@ -138,19 +138,47 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
   });
 
   async function createNewTask(): Promise<boolean> {
+    return openTaskSession({});
+  }
+
+  /**
+   * Open a dedicated extract session in the same workspace cwd, then send the
+   * extract prompt (separate task — does not append to the source chat).
+   */
+  async function startExtractTask(options: {
+    cwd: string;
+    title: string;
+    prompt: string;
+  }): Promise<boolean> {
+    const ok = await openTaskSession({
+      cwd: options.cwd,
+      title: options.title,
+    });
+    if (!ok) return false;
+    prefillDraft(options.prompt);
+    await send();
+    return true;
+  }
+
+  async function openTaskSession(options: {
+    cwd?: string | null;
+    title?: string;
+  }): Promise<boolean> {
     if (isBusy()) {
       await abort();
     }
     rememberDraft();
 
-    let pickedCwd: string | null = null;
+    let pickedCwd: string | null = options.cwd?.trim() || null;
     const generation = ++openGeneration;
     try {
-      const pick = await window.piDesktop.session.pickWorkspace();
-      if (pick.cancelled) return false;
-      if (generation !== openGeneration) return false;
-      pickedCwd = pick.cwd;
-      setCwd(pick.cwd);
+      if (!pickedCwd) {
+        const pick = await window.piDesktop.session.pickWorkspace();
+        if (pick.cancelled) return false;
+        if (generation !== openGeneration) return false;
+        pickedCwd = pick.cwd;
+      }
+      setCwd(pickedCwd);
       setIsReady(false);
       setIsCreatingSession(true);
       setTurnActive(false);
@@ -158,7 +186,10 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       setApproval(null);
       setActiveTaskId(null);
 
-      const result = await window.piDesktop.session.create({ cwd: pick.cwd });
+      const result = await window.piDesktop.session.create({
+        cwd: pickedCwd,
+        ...(options.title?.trim() ? { title: options.title.trim() } : {}),
+      });
       if (generation !== openGeneration) return false;
       if (result.cancelled) {
         setIsReady(false);
@@ -383,6 +414,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     createNewTask,
     prefillDraft,
     rebindActiveTask,
+    startExtractTask,
     modelLabel: createMemo(() => {
       const modelRef = hostState()?.model;
       return modelRef ? `${modelRef.provider}/${modelRef.id}` : "PI model";

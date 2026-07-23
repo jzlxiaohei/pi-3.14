@@ -21,6 +21,8 @@ export type TimelineAssistantMessage = {
   kind: "assistant";
   stopReason: PiTerminalStopReason | null;
   text: string;
+  /** Streaming/final model reasoning, when the provider exposes it. */
+  thinking?: string;
   timestamp: number;
 };
 

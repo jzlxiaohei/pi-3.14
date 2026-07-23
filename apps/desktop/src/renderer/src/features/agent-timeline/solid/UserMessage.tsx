@@ -1,4 +1,3 @@
-import { UserCircle } from "lucide-solid";
 import type { TimelineUserMessage } from "../core";
 
 type UserMessageProps = {
@@ -7,17 +6,8 @@ type UserMessageProps = {
 
 export function UserMessage(props: UserMessageProps) {
   return (
-    <article class="at-message at-message--user">
-      <header class="at-message-meta">
-        <time>{formatTime(props.item.timestamp)}</time>
-        <strong>You</strong>
-        <span class="at-avatar at-avatar--user"><UserCircle size={18} /></span>
-      </header>
+    <article class="at-message at-message--user" aria-label="Your message">
       <div class="at-user-bubble">{props.item.text}</div>
     </article>
   );
-}
-
-function formatTime(value: number): string {
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(value);
 }

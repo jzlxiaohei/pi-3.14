@@ -1,5 +1,5 @@
-import { codeToHtml } from "shiki";
 import { Show, createResource } from "solid-js";
+import { highlightCodeHtml } from "./highlight";
 
 type CodeBlockProps = {
   code: string;
@@ -9,11 +9,7 @@ type CodeBlockProps = {
 export function CodeBlock(props: CodeBlockProps) {
   const [html] = createResource(
     () => ({ code: props.code, language: props.language ?? "text" }),
-    async ({ code, language }) =>
-      codeToHtml(code, {
-        lang: language,
-        theme: "github-light",
-      }),
+    ({ code, language }) => highlightCodeHtml(code, language),
   );
 
   return (

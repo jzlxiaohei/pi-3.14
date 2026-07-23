@@ -52,11 +52,14 @@
   --status-warning-soft: var(--amber-100);
   --status-danger: var(--red-600);
   --status-danger-soft: var(--red-100);
+  /* Failed tool card: near-white wash + hairline, red concentrated on the left rule. */
+  --surface-danger-soft: #fff7f6;
+  --border-danger-soft: #efc4c3;
 
   /* Desktop shell roles */
   --surface-titlebar: rgba(230,239,246,.82);
   --surface-rail: rgba(216,229,241,.85);
-  --surface-sidebar: rgba(236,244,250,.88);
+  --surface-sidebar: #f8fafc;
   --traffic-close: #ff625a;
   --traffic-minimize: #ffbd2e;
   --traffic-zoom: #29c840;
@@ -104,7 +107,7 @@
   /* Layout */
   --rail-width: 68px; --sidebar-width: 240px; --inspector-width: 480px;
   --topbar-height: 52px; --control-height-sm: 30px; --control-height-md: 36px;
-  --control-height-lg: 42px; --content-max: 780px;
+  --control-height-lg: 42px; --content-max: 780px; --content-wide-max: 840px;
   --z-base: 0; --z-sticky: 10; --z-modal: 50; --z-popover: 70; --z-toast: 80;
 }
 
@@ -137,6 +140,8 @@
   --status-success-soft: color-mix(in srgb, var(--status-success) 20%, var(--surface-panel-solid));
   --status-warning-soft: color-mix(in srgb, var(--status-warning) 20%, var(--surface-panel-solid));
   --status-danger-soft: color-mix(in srgb, var(--status-danger) 20%, var(--surface-panel-solid));
+  --surface-danger-soft: color-mix(in srgb, var(--status-danger) 12%, var(--surface-panel-solid));
+  --border-danger-soft: color-mix(in srgb, var(--status-danger) 34%, var(--border-subtle));
   --diff-added-text: #71d29e;
   --diff-removed-text: #f09393;
   --shadow-focus: 0 0 0 3px rgba(0,168,240,.24);

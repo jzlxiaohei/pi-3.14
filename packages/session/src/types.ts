@@ -142,6 +142,8 @@ export interface PiEffectiveMessage {
   sourceEntryId: string;
   role: "user" | "assistant" | "toolResult" | "custom" | "branchSummary" | "compaction";
   text: string;
+  /** Assistant reasoning blocks from the session message, when present. */
+  thinking?: string;
   toolCalls?: Array<{ id: string; name: string; arguments: JsonValue }>;
   toolCallId?: string;
   toolName?: string;

@@ -38,18 +38,78 @@ button:disabled {
   cursor: default;
 }
 
-input,
+/* Minimal form reset — no full normalize. Kill native chrome; focus is owned by components.
+   Keep checkbox/radio native enough to stay visible/clickable (appearance:none hides them). */
+input:not([type="checkbox"]):not([type="radio"]),
 textarea {
+  margin: 0;
   border: 0;
-  outline: 0;
+  border-radius: 0;
+  outline: none;
+  background: none;
+  box-shadow: none;
+  appearance: none;
 }
 
+input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--action-primary);
+  cursor: pointer;
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* Buttons / bare focusables: ring on the control itself. */
 button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
+}
+
+/* Quiet Orbit scrollbars — thin thumb, no harsh system chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 @keyframes orbit-spin {

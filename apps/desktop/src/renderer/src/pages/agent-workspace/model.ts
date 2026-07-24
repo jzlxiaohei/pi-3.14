@@ -1,26 +1,31 @@
-import { createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal, onMount } from "solid-js";
+import type {
+  AppPreferences,
+  WorkspacePreferences,
+  WorkspaceTask,
+} from "../../../../shared/desktop-contracts";
 
-export type TaskStatus = "done" | "idle" | "running";
-export type InspectorTab = "changes" | "terminal";
-export type Theme = "dark" | "light";
+export type TaskStatus = WorkspaceTask["status"];
+export type InspectorTab = AppPreferences["inspectorTab"];
+export type Theme = AppPreferences["theme"];
 
 export type TaskSummary = {
-  id: number;
+  id: string;
   repo: string;
   status: TaskStatus;
   time: string;
   title: string;
+  cwd: string;
+  sessionPath: string | null;
 };
 
-export type WorkspaceFileNode = {
-  changed?: boolean;
-  children?: WorkspaceFileNode[];
-  name: string;
-  type: "file" | "folder";
+export type TaskGroup = {
+  cwd: string;
+  label: string;
+  tasks: WorkspaceTask[];
 };
 
 export type DiffLineKind = "added" | "context" | "removed";
-
 export type DiffLine = {
   content: string;
   id: string;
@@ -28,7 +33,6 @@ export type DiffLine = {
   newLine?: number;
   oldLine?: number;
 };
-
 export type DiffHunk = {
   header: string;
   id: string;
@@ -38,7 +42,6 @@ export type DiffHunk = {
   oldLines: number;
   oldStart: number;
 };
-
 export type DiffFile = {
   additions: number;
   binary?: boolean;
@@ -48,211 +51,239 @@ export type DiffFile = {
   language?: string;
   oldPath?: string;
   path: string;
-  status: "added" | "deleted" | "modified" | "renamed";
+  status: "added" | "deleted" | "modified" | "renamed" | "untracked";
 };
 
-const tasks: TaskSummary[] = [
-  { id: 1, title: "Refactor auth middleware", repo: "orbit-api", time: "2m", status: "running" },
-  { id: 2, title: "Fix invoice rounding", repo: "ledger-core", time: "18m", status: "done" },
-  { id: 3, title: "Add command palette", repo: "desktop-shell", time: "1h", status: "done" },
-  { id: 4, title: "Investigate flaky tests", repo: "web-console", time: "3h", status: "idle" },
-  { id: 5, title: "Upgrade Vite config", repo: "design-kit", time: "Yesterday", status: "done" },
-  { id: 6, title: "Wire session resume flow", repo: "agent-runtime", time: "Yesterday", status: "running" },
-  { id: 7, title: "Review tool approval timeout states", repo: "desktop-shell", time: "Mon", status: "idle" },
-  { id: 8, title: "Extract reusable task timeline blocks", repo: "orbit-ui", time: "Mon", status: "done" },
-  { id: 9, title: "Handle compacted session context projection", repo: "session-lab", time: "Fri", status: "done" },
-  { id: 10, title: "Prototype local model fallback banner", repo: "model-registry", time: "Fri", status: "idle" },
-  { id: 11, title: "Add retry visibility for long-running agent turns", repo: "agent-runtime", time: "Thu", status: "running" },
-  { id: 12, title: "Polish inspector diff empty state", repo: "orbit-ui", time: "Thu", status: "done" },
-  { id: 13, title: "Document embedded runtime worker lifecycle", repo: "docs-site", time: "Wed", status: "done" },
-  { id: 14, title: "Audit subagent cancellation propagation", repo: "subagents", time: "Wed", status: "idle" },
-  { id: 15, title: "Prepare packaging notes for unsigned mac builds", repo: "desktop-shell", time: "Tue", status: "done" }
-];
-
-export const workspaceFiles: WorkspaceFileNode[] = [
-  {
-    name: "src",
-    type: "folder",
-    children: [
-      {
-        name: "middleware",
-        type: "folder",
-        children: [
-          { name: "auth.ts", type: "file", changed: true },
-          { name: "session.ts", type: "file" }
-        ]
-      },
-      { name: "routes.ts", type: "file", changed: true },
-      {
-        name: "tests",
-        type: "folder",
-        children: [
-          { name: "auth.test.ts", type: "file", changed: true },
-          { name: "session.test.ts", type: "file" }
-        ]
-      }
-    ]
-  },
-  {
-    name: "packages",
-    type: "folder",
-    children: [
-      {
-        name: "runtime",
-        type: "folder",
-        children: [
-          { name: "embedded.ts", type: "file" },
-          { name: "events.ts", type: "file" }
-        ]
-      },
-      {
-        name: "session",
-        type: "folder",
-        children: [
-          { name: "parser.ts", type: "file" },
-          { name: "analysis.ts", type: "file" }
-        ]
-      }
-    ]
-  },
-  { name: "package.json", type: "file" }
-];
-
-export const diffFiles: DiffFile[] = [
-  {
-    id: "src/middleware/auth.ts",
-    path: "src/middleware/auth.ts",
-    status: "modified",
-    language: "typescript",
-    additions: 31,
-    deletions: 18,
-    hunks: [
-      {
-        id: "src/middleware/auth.ts:42",
-        header: "@@ -42,7 +42,11 @@",
-        oldStart: 42,
-        oldLines: 7,
-        newStart: 42,
-        newLines: 11,
-        lines: [
-          { id: "auth-42", kind: "context", oldLine: 42, newLine: 42, content: "export async function authenticate(req) {" },
-          { id: "auth-43-old", kind: "removed", oldLine: 43, content: "const token = getBearerToken(req);" },
-          { id: "auth-44-old", kind: "removed", oldLine: 44, content: "return verifyJwt(token, config.secret);" },
-          { id: "auth-43-new", kind: "added", newLine: 43, content: "return verifyRequestToken(req, {" },
-          { id: "auth-44-new", kind: "added", newLine: 44, content: "  allowExpired: false," },
-          { id: "auth-45-new", kind: "added", newLine: 45, content: '  audience: "api",' },
-          { id: "auth-46-new", kind: "added", newLine: 46, content: "});" },
-          { id: "auth-45", kind: "context", oldLine: 45, newLine: 47, content: "}" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "src/routes.ts",
-    path: "src/routes.ts",
-    status: "modified",
-    language: "typescript",
-    additions: 17,
-    deletions: 13,
-    hunks: [
-      {
-        id: "src/routes.ts:18",
-        header: "@@ -18,9 +18,10 @@",
-        oldStart: 18,
-        oldLines: 9,
-        newStart: 18,
-        newLines: 10,
-        lines: [
-          { id: "routes-18", kind: "context", oldLine: 18, newLine: 18, content: "router.get('/profile', async (req, res) => {" },
-          { id: "routes-19-old", kind: "removed", oldLine: 19, content: "const user = await verifyRouteToken(req);" },
-          { id: "routes-19-new", kind: "added", newLine: 19, content: "const user = await authenticate(req);" },
-          { id: "routes-20", kind: "context", oldLine: 20, newLine: 20, content: "return res.json({ user });" },
-          { id: "routes-21", kind: "context", oldLine: 21, newLine: 21, content: "});" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "src/tests/auth.test.ts",
-    path: "src/tests/auth.test.ts",
-    status: "added",
-    language: "typescript",
-    additions: 24,
-    deletions: 0,
-    hunks: [
-      {
-        id: "src/tests/auth.test.ts:1",
-        header: "@@ -0,0 +1,6 @@",
-        oldStart: 0,
-        oldLines: 0,
-        newStart: 1,
-        newLines: 6,
-        lines: [
-          { id: "auth-test-1", kind: "added", newLine: 1, content: "test('rejects expired session tokens', async () => {" },
-          { id: "auth-test-2", kind: "added", newLine: 2, content: "  const response = await request(app)" },
-          { id: "auth-test-3", kind: "added", newLine: 3, content: "    .get('/profile')" },
-          { id: "auth-test-4", kind: "added", newLine: 4, content: "    .set('authorization', expiredToken);" },
-          { id: "auth-test-5", kind: "added", newLine: 5, content: "  expect(response.status).toBe(401);" },
-          { id: "auth-test-6", kind: "added", newLine: 6, content: "});" }
-        ]
-      }
-    ]
-  }
-];
+const DEFAULT_PREFERENCES: AppPreferences = {
+  theme: "light",
+  tasksOpen: true,
+  inspectorOpen: false,
+  tasksWidth: 264,
+  inspectorWidth: 480,
+  inspectorTab: "files",
+  showArchived: false,
+};
+const TASKS_OPEN_KEY = "pie.panel.tasksOpen";
+const INSPECTOR_OPEN_KEY = "pie.panel.inspectorOpen";
 
 export function createWorkspaceModel() {
-  const [selectedTaskId, setSelectedTaskId] = createSignal(1);
+  const [tasks, setTasks] = createSignal<WorkspaceTask[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = createSignal<string | null>(null);
+  const [activeTaskId, setActiveTaskId] = createSignal<string | null>(null);
   const [query, setQuery] = createSignal("");
-  const [tab, setTab] = createSignal<InspectorTab>("changes");
-  const [theme, setTheme] = createSignal<Theme>("light");
-  const [isComplete, setIsComplete] = createSignal(false);
+  const [preferences, setPreferences] = createSignal<AppPreferences>(DEFAULT_PREFERENCES);
+  const [workspacePreferences, setWorkspacePreferences] = createSignal<
+    Record<string, WorkspacePreferences>
+  >({});
+  const [bootstrapped, setBootstrapped] = createSignal(false);
+
+  onMount(() => {
+    const legacyPanelPreferences = readLegacyPanelPreferences();
+    void window.piDesktop.tasks
+      .bootstrap({ legacyPanelPreferences })
+      .then((boot) => {
+        setTasks(boot.rootTasks);
+        setActiveTaskId(boot.activeTask?.id ?? null);
+        setSelectedTaskId(boot.activeRootTaskId);
+        setPreferences(boot.appPreferences);
+        setWorkspacePreferences(boot.workspacePreferences);
+        if (boot.legacyBrowserPreferencesImported) clearLegacyPanelPreferences();
+      })
+      .finally(() => setBootstrapped(true));
+  });
 
   const normalizedQuery = createMemo(() => query().trim().toLowerCase());
+  const archivedCount = createMemo(
+    () => tasks().filter((task) => typeof task.archivedAt === "number").length,
+  );
+  const activeCount = createMemo(
+    () => tasks().filter((task) => typeof task.archivedAt !== "number").length,
+  );
   const filteredTasks = createMemo(() => {
     const search = normalizedQuery();
-    if (!search) return tasks;
-    return tasks.filter((task) => {
-      return task.title.toLowerCase().includes(search) || task.repo.toLowerCase().includes(search);
+    let list = tasks();
+    if (!preferences().showArchived) {
+      list = list.filter((task) => typeof task.archivedAt !== "number");
+    }
+    if (!search) return list;
+    return list.filter((task) => {
+      const repo = task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? task.cwd;
+      return (
+        task.title.toLowerCase().includes(search) ||
+        repo.toLowerCase().includes(search) ||
+        task.cwd.toLowerCase().includes(search)
+      );
     });
   });
 
+  const selectedWorkspaceTask = createMemo(() => {
+    const id = selectedTaskId();
+    return tasks().find((item) => item.id === id) ?? null;
+  });
   const selectedTask = createMemo(() => {
-    return tasks.find((task) => task.id === selectedTaskId()) ?? tasks[0]!;
+    const task = selectedWorkspaceTask();
+    return task ? toSummary(task) : null;
+  });
+  const taskGroups = createMemo((): TaskGroup[] => {
+    const groups: TaskGroup[] = [];
+    const indexByCwd = new Map<string, number>();
+    for (const task of filteredTasks()) {
+      let index = indexByCwd.get(task.cwd);
+      if (index === undefined) {
+        index = groups.length;
+        indexByCwd.set(task.cwd, index);
+        groups.push({
+          cwd: task.cwd,
+          label: task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? task.cwd,
+          tasks: [],
+        });
+      }
+      groups[index]!.tasks.push(task);
+    }
+    return groups;
   });
 
+  function updateAppPreference(patch: Partial<AppPreferences>): void {
+    setPreferences((current) => ({ ...current, ...patch }));
+    void window.piDesktop.preferences.updateApp(patch);
+  }
+
   return {
+    activeCount,
+    activeTaskId,
+    archivedCount,
+    bootstrapped,
     filteredTasks,
-    isComplete,
+    taskGroups,
     query,
     selectedTask,
+    selectedWorkspaceTask,
     selectedTaskId,
-    tab,
-    theme,
+    showArchived: () => preferences().showArchived,
+    tab: () => preferences().inspectorTab,
+    tasks,
+    theme: () => preferences().theme,
+    tasksOpen: () => preferences().tasksOpen,
+    inspectorOpen: () => preferences().inspectorOpen,
+    tasksWidth: () => preferences().tasksWidth,
+    inspectorWidth: () => preferences().inspectorWidth,
     clearSearch() {
       setQuery("");
     },
-    markComplete() {
-      setIsComplete(true);
+    replaceTasks(
+      next: WorkspaceTask[],
+      selectedId?: string | null,
+      nextActiveTaskId?: string | null,
+    ) {
+      setTasks(next);
+      if (selectedId !== undefined) setSelectedTaskId(selectedId);
+      if (nextActiveTaskId !== undefined) setActiveTaskId(nextActiveTaskId);
     },
-    newTask() {
-      setSelectedTaskId(1);
-      setQuery("");
-      setIsComplete(false);
-      setTab("changes");
+    upsertTask(task: WorkspaceTask, select = true, _moveToFront = false) {
+      if (task.parentTaskId === null) {
+        setTasks((current) => {
+          const index = current.findIndex((item) => item.id === task.id);
+          if (index < 0) return [task, ...current];
+          const next = current.slice();
+          next[index] = task;
+          return next;
+        });
+      }
+      setActiveTaskId(task.id);
+      if (select) setSelectedTaskId(task.rootTaskId);
     },
-    selectTask(id: number) {
+    selectTaskLocal(id: string | null) {
       setSelectedTaskId(id);
-      setIsComplete(false);
-    },
-    sendFollowUp() {
-      setIsComplete(false);
     },
     setQuery,
-    setTab,
+    setShowArchived(value: boolean) {
+      updateAppPreference({ showArchived: value });
+    },
+    setTab(value: InspectorTab) {
+      updateAppPreference({ inspectorTab: value });
+    },
+    setTasksOpen(value: boolean) {
+      updateAppPreference({ tasksOpen: value });
+    },
+    setInspectorOpen(value: boolean) {
+      updateAppPreference({ inspectorOpen: value });
+    },
+    commitTasksWidth(value: number) {
+      updateAppPreference({ tasksWidth: value });
+    },
+    commitInspectorWidth(value: number) {
+      updateAppPreference({ inspectorWidth: value });
+    },
+    isGroupCollapsed(cwd: string): boolean {
+      return workspacePreferences()[cwd]?.taskGroupCollapsed ?? false;
+    },
+    setGroupCollapsed(cwd: string, collapsed: boolean) {
+      setWorkspacePreferences((current) => ({
+        ...current,
+        [cwd]: {
+          cwd,
+          reviewBaseRef: current[cwd]?.reviewBaseRef ?? null,
+          taskGroupCollapsed: collapsed,
+        },
+      }));
+      void window.piDesktop.preferences
+        .updateWorkspace(cwd, { taskGroupCollapsed: collapsed })
+        .then((next) => setWorkspacePreferences((current) => ({ ...current, [cwd]: next })));
+    },
+    async moveTask(taskId: string, beforeTaskId: string | null) {
+      const next = await window.piDesktop.tasks.move({ taskId, beforeTaskId });
+      setTasks(next);
+    },
     toggleTheme() {
-      setTheme((current) => current === "light" ? "dark" : "light");
-    }
+      updateAppPreference({ theme: preferences().theme === "light" ? "dark" : "light" });
+    },
   };
 }
 
 export type WorkspaceModel = ReturnType<typeof createWorkspaceModel>;
+
+export function toSummary(task: WorkspaceTask): TaskSummary {
+  return {
+    id: task.id,
+    title: task.title,
+    repo: task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? task.cwd,
+    cwd: task.cwd,
+    sessionPath: task.sessionPath,
+    status: task.status,
+    time: formatRelative(task.updatedAt),
+  };
+}
+
+export function formatRelative(at: number): string {
+  const delta = Date.now() - at;
+  const minutes = Math.round(delta / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(at).toLocaleDateString();
+}
+
+function readLegacyPanelPreferences(): { tasksOpen?: boolean; inspectorOpen?: boolean } {
+  const result: { tasksOpen?: boolean; inspectorOpen?: boolean } = {};
+  try {
+    const tasks = localStorage.getItem(TASKS_OPEN_KEY);
+    const inspector = localStorage.getItem(INSPECTOR_OPEN_KEY);
+    if (tasks === "true" || tasks === "false") result.tasksOpen = tasks === "true";
+    if (inspector === "true" || inspector === "false") result.inspectorOpen = inspector === "true";
+  } catch {
+    // SQLite defaults remain authoritative when browser storage is unavailable.
+  }
+  return result;
+}
+
+function clearLegacyPanelPreferences(): void {
+  try {
+    localStorage.removeItem(TASKS_OPEN_KEY);
+    localStorage.removeItem(INSPECTOR_OPEN_KEY);
+  } catch {
+    // The import marker prevents applying them again if browser storage cannot be cleared.
+  }
+}

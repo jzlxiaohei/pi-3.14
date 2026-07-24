@@ -9,7 +9,7 @@ For all new or modified frontend work:
 
 - Architecture and component boundaries: $frontend-page-architecture
 - SolidJS client state: $solidjs-state-management
-- Product UI and tokens: $build-orbit-ui
+- Product UI, tokens, and motion: $build-orbit-ui (read `references/motion.md` when adding hover/open/close/expand/loading transitions; component CSS must use semantic tokens so dark mode works)
 - Dependency decisions: $dependency-vetting
 
 Default stack; change only through an explicit project decision:
@@ -26,3 +26,21 @@ Default stack; change only through an explicit project decision:
 For PI runtime, session, subagent, Electron integration, or tool-gating work:
 
 - PI package boundaries and Electron embedding: $pi-3-14-usage
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `jzlxiaohei/pi-3.14`; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default Matt engineering skill triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use single-context domain docs: root `CONTEXT.md` and repo-wide ADRs in `docs/adr/`. See `docs/agents/domain.md`.
+
+### Reusable skills
+
+When a flow looks **stable and likely to repeat**, tell the user it could become a Skill (personal library `~/.pi/agent/skills`, optional helper script). Prefer proposing extraction over silently inventing automation. One-off work stays in the chat; do not write skills or scripts unless the user asks or clearly accepts the suggestion. In PIE, extraction runs in a separate session and only writes after the user confirms.

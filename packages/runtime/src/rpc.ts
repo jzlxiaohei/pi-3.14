@@ -2,6 +2,9 @@ import { join } from "node:path";
 import type {
   PiHostEvent,
   PiHostState,
+  PiLiveInspectSnapshot,
+  PiModelOption,
+  PiNavigateTreeResult,
   PiStopReason,
   PiThinkingLevel,
   PiTurnResult,
@@ -150,6 +153,33 @@ export class RpcPiHost implements PiHost {
     return projectState(await this.client.getState());
   }
 
+  async listModels(): Promise<PiModelOption[]> {
+    this.assertAvailable();
+    const models = await this.client.getAvailableModels();
+    return models.map((model) => ({
+      provider: model.provider,
+      id: model.id,
+    }));
+  }
+
+  async setModel(provider: string, modelId: string): Promise<PiHostState> {
+    this.assertAvailable();
+    await this.client.setModel(provider, modelId);
+    return this.getState();
+  }
+
+  async listThinkingLevels(): Promise<PiThinkingLevel[]> {
+    this.assertAvailable();
+    // RPC has no list API; expose the full clampable set.
+    return ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  }
+
+  async setThinkingLevel(level: PiThinkingLevel): Promise<PiHostState> {
+    this.assertAvailable();
+    await this.client.setThinkingLevel(level);
+    return this.getState();
+  }
+
   async newSession(options?: { parentSession?: string }): Promise<PiSessionReplacementResult> {
     this.assertReplaceable();
     return this.client.newSession(options?.parentSession);
@@ -164,6 +194,38 @@ export class RpcPiHost implements PiHost {
     this.assertReplaceable();
     const result = await this.client.fork(entryId);
     return { cancelled: result.cancelled, selectedText: result.text };
+  }
+
+  async inspectLive(): Promise<PiLiveInspectSnapshot> {
+    this.assertAvailable();
+    throw new Error("inspectLive is not available on the RPC PI host");
+  }
+
+  continueTurn(): PiTurnHandle {
+    this.assertAvailable();
+    throw new Error("continueTurn is not available on the RPC PI host");
+  }
+
+  async navigateTree(
+    _entryId: string,
+    _options?: { summarize?: boolean; label?: string },
+  ): Promise<PiNavigateTreeResult> {
+    this.assertReplaceable();
+    throw new Error("navigateTree is not available on the RPC PI host");
+  }
+
+  async prepareBranchSummary(): Promise<import("@pi-3.14/model").PiPreparedBranchSummary> {
+    this.assertAvailable();
+    throw new Error("prepareBranchSummary is not available on the RPC PI host");
+  }
+
+  async getPreparedBranchSummary(): Promise<import("@pi-3.14/model").PiPreparedBranchSummary | null> {
+    this.assertAvailable();
+    return null;
+  }
+
+  async clearPreparedBranchSummary(): Promise<void> {
+    this.assertAvailable();
   }
 
   async dispose(): Promise<void> {
@@ -273,6 +335,9 @@ function projectState(state: RpcSessionState): PiHostState {
   return {
     sessionId: state.sessionId,
     sessionPath: state.sessionFile ?? null,
+    // RPC state snapshot does not expose the live leaf; callers that need it
+    // should use getEntries() / navigate results instead.
+    leafEntryId: null,
     isStreaming: state.isStreaming,
     isCompacting: state.isCompacting,
     model:

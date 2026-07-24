@@ -14,6 +14,18 @@ Shared PI runtime packages live under `@pi-3.14/*`.
 - Orbit tokens in `src/renderer/src/styles/tokens.css`
 - `lucide-solid` icons
 
+## Module format policy
+
+With `"type": "module"` and `sandbox: true`, keep these fixed (see `electron.vite.config.ts`):
+
+| Surface | Format | Extension | Rule |
+|---------|--------|-----------|------|
+| main | ESM | `.js` | default under `"type": "module"` |
+| preload | CJS | `.cjs` | sandboxed preload cannot run ESM `import` |
+| renderer | Vite ESM | — | avoid CJS-only dependency trees in the browser |
+
+PI host runs in an Electron `utilityProcess` (`src/main/pi/host-process.ts`), forked from main with electron-vite `?modulePath`. Main keeps task store, dialogs, and JSONL timeline projection. Do not guess `.js` / `.mjs` / `.cjs` at runtime for preload or the host entry.
+
 ## Development
 
 From the repo root:
@@ -54,6 +66,34 @@ src/renderer/src/
   shared/ui/           reusable Ark/Orbit primitives
   styles/              tokens, base CSS, shared UI CSS, page CSS
 ```
+
+## Reusable skills
+
+Reuse means PI Skills (`SKILL.md` + optional scripts) in the **personal PI library** (`~/.pi/agent/skills`).
+
+**Extract (first slice):** composer toolbar **协助抽取 Skill** → choose full transcript or message range → opens a dedicated Task/session that drafts `SKILL.md` → user previews and confirms write. Does not auto-write.
+
+Later: skills management (categories), search/select for the current chat, and how chat loads skills effectively.
+
+## Engineering path (optional)
+
+Choose a playbook (or skip) when **creating a task**. Progress lives on the task and is
+**not** driven by chat messages. While a path is active, a **right-floating** step card
+shows N/M + Next/Skip and prefills slash starters (e.g. `/to-spec`).
+
+Free chat = skip at create. Path details / clear: click task meta under the title.
+
+Slash starters assume project skills under `{cwd}/.pi/skills` (this repo vendors Matt’s
+engineering set for self-dev). Skills install/management belongs on the future Skills nav
+page — not in chat chrome.
+
+```sh
+# optional manual install in another project
+npx skills@latest add mattpocock/skills
+```
+
+Upstream skill names evolve. Starters live in
+`pages/agent-workspace/workflow/playbooks.ts`.
 
 ## Conventions
 

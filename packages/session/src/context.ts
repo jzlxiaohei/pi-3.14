@@ -6,6 +6,7 @@ import {
   messageRole,
   modelRef,
   textContent,
+  thinkingContent,
   thinkingLevel,
   toolCalls,
 } from "./records.js";
@@ -91,6 +92,29 @@ export function buildPiContextProjection(
   };
 }
 
+/**
+ * Full active-path messages in chronological order (root → leaf).
+ * Unlike {@link buildPiContextProjection}, this does **not** collapse pre-compaction
+ * history — intended for UI timelines so users can still read earlier turns.
+ */
+export function buildPiPathMessages(
+  snapshot: PiSessionSnapshot,
+  leafId: string | null = snapshot.leafId,
+): {
+  leafId: string | null;
+  pathEntryIds: string[];
+  messages: PiEffectiveMessage[];
+} {
+  const index = buildPiSessionIndex(snapshot);
+  const diagnostics: PiSessionDiagnostic[] = [];
+  const path = resolvePath(leafId, index.byId, diagnostics);
+  return {
+    leafId,
+    pathEntryIds: path.map((entry) => entry.id),
+    messages: path.flatMap(toEffectiveMessage),
+  };
+}
+
 function resolvePath(
   leafId: string | null,
   byId: ReadonlyMap<string, PiSessionEntrySnapshot>,
@@ -166,11 +190,13 @@ function toEffectiveMessage(entry: PiSessionEntrySnapshot): PiEffectiveMessage[]
   }
   if (role === "assistant") {
     const calls = toolCalls(entry);
+    const thinking = thinkingContent(message.content);
     return [
       {
         sourceEntryId: entry.id,
         role: "assistant",
         text: textContent(message.content),
+        ...(thinking ? { thinking } : {}),
         ...(calls.length > 0 ? { toolCalls: calls } : {}),
       },
     ];

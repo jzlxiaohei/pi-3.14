@@ -13,6 +13,8 @@ export type TabItem = {
 type TabsProps = {
   items: TabItem[];
   onValueChange: (value: string) => void;
+  /** Pinned to the right of the tab list (e.g. collapse). Survives horizontal tab overflow. */
+  trailing?: JSX.Element;
   value: string;
 };
 
@@ -24,15 +26,20 @@ export function Tabs(props: TabsProps) {
       onValueChange={(details) => props.onValueChange(details.value)}
     >
       <ArkTabs.List class="orbit-tabs__list">
-        <For each={props.items}>
-          {(item) => (
-            <ArkTabs.Trigger class="orbit-tabs__trigger" value={item.value}>
-              {item.icon}
-              {item.label}
-              {item.badge ? <span class="orbit-tabs__badge">{item.badge}</span> : null}
-            </ArkTabs.Trigger>
-          )}
-        </For>
+        <div class="orbit-tabs__items">
+          <For each={props.items}>
+            {(item) => (
+              <ArkTabs.Trigger class="orbit-tabs__trigger" value={item.value}>
+                {item.icon}
+                {item.label}
+                {item.badge ? <span class="orbit-tabs__badge">{item.badge}</span> : null}
+              </ArkTabs.Trigger>
+            )}
+          </For>
+        </div>
+        <Show when={props.trailing}>
+          <div class="orbit-tabs__trailing">{props.trailing}</div>
+        </Show>
       </ArkTabs.List>
       <For each={props.items}>
         {(item) => (

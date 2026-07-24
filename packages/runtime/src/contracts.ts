@@ -1,4 +1,15 @@
-import type { PiHostEvent, PiHostState, PiTurnResult } from "@pi-3.14/model";
+import type {
+  PiHostEvent,
+  PiHostState,
+  PiLiveInspectSnapshot,
+  PiModelOption,
+  PiNavigateTreeResult,
+  PiPreparedBranchSummary,
+  PiThinkingLevel,
+  PiTurnResult,
+} from "@pi-3.14/model";
+
+export type { PiLiveInspectSnapshot, PiNavigateTreeResult, PiPreparedBranchSummary };
 
 export interface PiPromptInput {
   text: string;
@@ -32,13 +43,38 @@ export interface PiForkResult extends PiSessionReplacementResult {
 export interface PiHost {
   readonly capabilities: PiHostCapabilities;
   prompt(input: PiPromptInput | string): PiTurnHandle;
+  /**
+   * Continue generation from the current leaf without appending a new user message.
+   * Last transcript message must be a user (or tool-result) — used to retry an
+   * unanswered latest user turn.
+   */
+  continueTurn(): PiTurnHandle;
   steer(input: PiPromptInput | string): Promise<void>;
   followUp(input: PiPromptInput | string): Promise<void>;
   abort(): Promise<void>;
   getState(): Promise<PiHostState>;
+  /** Models with configured auth (may be empty while providers refresh). */
+  listModels(): Promise<PiModelOption[]>;
+  setModel(provider: string, modelId: string): Promise<PiHostState>;
+  listThinkingLevels(): Promise<PiThinkingLevel[]>;
+  setThinkingLevel(level: PiThinkingLevel): Promise<PiHostState>;
   newSession(options?: { parentSession?: string }): Promise<PiSessionReplacementResult>;
   switchSession(sessionPath: string): Promise<PiSessionReplacementResult>;
   fork(entryId: string): Promise<PiForkResult>;
+  /** Live system prompt, tools, context usage, and billed session stats. */
+  inspectLive(): Promise<PiLiveInspectSnapshot>;
+  /**
+   * Move the leaf within the same session file (Cursor-style revert / branch).
+   * Unlike `fork`, does not create a new session file.
+   */
+  navigateTree(
+    entryId: string,
+    options?: { summarize?: boolean; label?: string },
+  ): Promise<PiNavigateTreeResult>;
+  /** Generate a leave-path summary for the current leaf without navigating. */
+  prepareBranchSummary(): Promise<PiPreparedBranchSummary>;
+  getPreparedBranchSummary(): Promise<PiPreparedBranchSummary | null>;
+  clearPreparedBranchSummary(): Promise<void>;
   dispose(): Promise<void>;
 }
 

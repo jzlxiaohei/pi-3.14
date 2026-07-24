@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { messageText, projectPiEvent } from "./events.js";
+import { messageText, messageThinking, projectPiEvent } from "./events.js";
 
 test("projects streaming text without leaking SDK objects", () => {
   assert.deepEqual(
@@ -12,6 +12,19 @@ test("projects streaming text without leaking SDK objects", () => {
       10,
     ),
     { type: "text_delta", at: 10, text: "hello" },
+  );
+});
+
+test("projects streaming thinking deltas", () => {
+  assert.deepEqual(
+    projectPiEvent(
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_delta", delta: "plan…" },
+      },
+      11,
+    ),
+    { type: "thinking_delta", at: 11, text: "plan…" },
   );
 });
 
@@ -36,8 +49,22 @@ test("projects terminal assistant messages", () => {
       at: 20,
       role: "assistant",
       text: "done",
+      thinking: "hidden",
       stopReason: "stop",
     },
+  );
+});
+
+test("extracts thinking blocks", () => {
+  assert.equal(
+    messageThinking({
+      content: [
+        { type: "thinking", thinking: "a" },
+        { type: "text", text: "x" },
+        { type: "thinking", thinking: "b" },
+      ],
+    }),
+    "a\n\nb",
   );
 });
 

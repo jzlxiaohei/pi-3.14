@@ -23,6 +23,18 @@ export function messageText(message: unknown): string {
     .join("");
 }
 
+export function messageThinking(message: unknown): string {
+  const content = record(message).content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      const item = record(part);
+      return item.type === "thinking" && typeof item.thinking === "string" ? item.thinking : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function messageStopReason(message: unknown): PiStopReason | undefined {
   const reason = record(message).stopReason;
   return reason === "stop" ||
@@ -34,6 +46,11 @@ export function messageStopReason(message: unknown): PiStopReason | undefined {
     : undefined;
 }
 
+export function messageErrorMessage(message: unknown): string | undefined {
+  const value = record(message).errorMessage;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 export function projectPiEvent(event: unknown, at = Date.now()): PiHostEvent | undefined {
   const source = record(event);
   switch (source.type) {
@@ -41,9 +58,13 @@ export function projectPiEvent(event: unknown, at = Date.now()): PiHostEvent | u
       return { type: "agent_start", at };
     case "message_update": {
       const update = record(source.assistantMessageEvent);
-      return update.type === "text_delta" && typeof update.delta === "string"
-        ? { type: "text_delta", at, text: update.delta }
-        : undefined;
+      if (update.type === "text_delta" && typeof update.delta === "string") {
+        return { type: "text_delta", at, text: update.delta };
+      }
+      if (update.type === "thinking_delta" && typeof update.delta === "string") {
+        return { type: "thinking_delta", at, text: update.delta };
+      }
+      return undefined;
     }
     case "tool_execution_start":
       return {
@@ -74,12 +95,16 @@ export function projectPiEvent(event: unknown, at = Date.now()): PiHostEvent | u
       const message = source.message;
       const role = record(message).role;
       const stopReason = messageStopReason(message);
+      const thinking = messageThinking(message);
+      const errorMessage = messageErrorMessage(message);
       return {
         type: "message_end",
         at,
         role: typeof role === "string" ? role : "unknown",
         text: messageText(message),
+        ...(thinking ? { thinking } : {}),
         ...(stopReason ? { stopReason } : {}),
+        ...(errorMessage ? { errorMessage } : {}),
       };
     }
     case "queue_update":

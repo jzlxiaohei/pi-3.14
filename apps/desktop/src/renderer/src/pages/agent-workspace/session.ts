@@ -28,6 +28,8 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
   /** Bumps when draft is programmatically prefilled (not user typing). */
   const [draftAttention, setDraftAttention] = createSignal(0);
   const [isCreatingSession, setIsCreatingSession] = createSignal(false);
+  /** Task id being bound (Root or Child) while isCreatingSession — for sidebar spinners. */
+  const [openingTaskId, setOpeningTaskId] = createSignal<string | null>(null);
   const [isReady, setIsReady] = createSignal(false);
   const [turnActive, setTurnActive] = createSignal(false);
   const [activeTaskId, setActiveTaskId] = createSignal<string | null>(null);
@@ -262,7 +264,10 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       );
       return false;
     } finally {
-      if (generation === openGeneration) setIsCreatingSession(false);
+      if (generation === openGeneration) {
+        setIsCreatingSession(false);
+        setOpeningTaskId(null);
+      }
     }
   }
 
@@ -330,6 +335,18 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     return activateTask(taskId, { force: true });
   }
 
+  /** Sidebar selection anchor for a Task id (Root list or workflow-bound Child). */
+  function resolveSidebarRootId(taskId: string): string | null {
+    const known = model.tasks().find((task) => task.id === taskId);
+    if (known) return known.rootTaskId;
+    for (const root of model.tasks()) {
+      if (root.workflow?.steps.some((step) => step.taskId === taskId)) {
+        return root.rootTaskId;
+      }
+    }
+    return model.selectedTaskId();
+  }
+
   async function activateTask(
     taskId: string,
     options?: { force?: boolean },
@@ -346,11 +363,14 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       await abort();
     }
     await rememberDraft();
-    // Highlight immediately; do not wait on host bind (avoids list flash/reorder).
-    model.selectTaskLocal(taskId);
+    // Highlight Root immediately. Child Tasks are not in the sidebar list —
+    // never set selectedTaskId to a Child id (CONTEXT: sidebar selection = Root ancestor).
+    const rootId = resolveSidebarRootId(taskId);
+    if (rootId) model.selectTaskLocal(rootId);
 
     const generation = ++openGeneration;
     setIsCreatingSession(true);
+    setOpeningTaskId(taskId);
     setIsReady(false);
     setTurnActive(false);
     setApproval(null);
@@ -392,6 +412,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
         const fallback = model.tasks().find((task) => task.id !== taskId)?.id;
         if (fallback) {
           setIsCreatingSession(false);
+          setOpeningTaskId(null);
           return activateTask(fallback);
         }
       }
@@ -403,7 +424,10 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       );
       return false;
     } finally {
-      if (generation === openGeneration) setIsCreatingSession(false);
+      if (generation === openGeneration) {
+        setIsCreatingSession(false);
+        setOpeningTaskId(null);
+      }
     }
   }
 
@@ -812,6 +836,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     hostState,
     isBusy,
     isCreatingSession,
+    openingTaskId,
     isReady,
     items,
     status,

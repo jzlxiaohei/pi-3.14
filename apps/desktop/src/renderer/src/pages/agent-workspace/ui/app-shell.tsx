@@ -592,9 +592,8 @@ export function AppShell(props: AppShellProps) {
             <div class="panel-slot panel-slot--left" data-open={tasksOpen() ? "true" : "false"}>
               <div class="sidebar-panel" inert={!tasksOpen() || undefined}>
                 <TaskSidebar
-                  loadingTaskId={
-                    props.session.isCreatingSession() ? props.model.selectedTaskId() : null
-                  }
+                  loadingTaskId={props.session.openingTaskId()}
+                  activeTaskId={props.session.activeTaskId()}
                   model={props.model}
                   onCollapse={() => props.model.setTasksOpen(false)}
                   onNewTask={startNewTask}

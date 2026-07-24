@@ -13,7 +13,7 @@
     "clean": "node -e \"require('node:fs').rmSync('out',{recursive:true,force:true});require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "test": "node --import tsx --test src/renderer/src/features/agent-timeline/core/*.test.ts src/main/persistence/*.test.ts",
+    "test": "node --import tsx --test src/renderer/src/features/agent-timeline/core/*.test.ts src/renderer/src/pages/agent-workspace/workflow/*.test.ts src/main/persistence/*.test.ts",
     "typecheck": "tsc --noEmit",
     "package": "pnpm build && electron-builder --dir --config electron-builder.yml",
     "dist": "pnpm build && electron-builder --config electron-builder.yml"

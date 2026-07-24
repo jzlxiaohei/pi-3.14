@@ -18,9 +18,13 @@ import {
   draggable,
   dropTargetForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { WorkspaceTask } from "../../../../../shared/desktop-contracts";
 import { formatRelative, type WorkspaceModel } from "../model";
+import {
+  workflowSidebarSteps,
+  type WorkflowSidebarStepRow,
+} from "../workflow/sidebar-steps";
 import { writeClipboardText } from "@/shared/clipboard";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -29,7 +33,10 @@ import { ArchiveTaskDialog } from "./delete-task-dialog";
 import { TaskIdChip } from "./task-id-chip";
 
 type TaskSidebarProps = {
+  /** Task id currently binding (Root or step Child) — drives row spinners. */
   loadingTaskId?: string | null;
+  /** Open PI Session’s Task (may be a Child under the selected Root). */
+  activeTaskId?: string | null;
   model: WorkspaceModel;
   onCollapse: () => void;
   onNewTask: () => void;
@@ -152,13 +159,14 @@ export function TaskSidebar(props: TaskSidebarProps) {
                     <div class="task-group-list">
                       <For each={group.tasks}>
                         {(task, index) => (
-                          <SortableTaskRow
+                          <RootTaskBlock
                             task={task}
                             nextTaskId={() => group.tasks[index() + 1]?.id ?? null}
-                            opening={props.loadingTaskId === task.id}
-                            selected={props.model.selectedTaskId() === task.id}
+                            selectedTaskId={props.model.selectedTaskId}
+                            activeTaskId={() => props.activeTaskId ?? null}
+                            loadingTaskId={() => props.loadingTaskId ?? null}
                             busy={archiving()}
-                            onSelect={() => props.onSelectTask(task.id)}
+                            onSelectTask={props.onSelectTask}
                             onArchive={() => setPendingArchive(task)}
                             onUnarchive={() => void props.onUnarchiveTask(task.id)}
                             onMove={(taskId, beforeTaskId) =>
@@ -198,6 +206,101 @@ export function TaskSidebar(props: TaskSidebarProps) {
         onConfirm={() => void confirmArchive()}
       />
     </aside>
+  );
+}
+
+function RootTaskBlock(props: {
+  task: WorkspaceTask;
+  nextTaskId: () => string | null;
+  selectedTaskId: () => string | null;
+  activeTaskId: () => string | null;
+  loadingTaskId: () => string | null;
+  busy: boolean;
+  onSelectTask: (id: string) => void;
+  onArchive: () => void;
+  onUnarchive: () => void;
+  onMove: (taskId: string, beforeTaskId: string | null) => void;
+}) {
+  const selected = createMemo(() => props.selectedTaskId() === props.task.id);
+  const stepRows = createMemo(() =>
+    selected() ? workflowSidebarSteps(props.task.workflow, props.activeTaskId()) : [],
+  );
+
+  return (
+    <div class="task-block">
+      <SortableTaskRow
+        task={props.task}
+        nextTaskId={props.nextTaskId}
+        opening={props.loadingTaskId() === props.task.id}
+        selected={selected()}
+        busy={props.busy}
+        onSelect={() => props.onSelectTask(props.task.id)}
+        onArchive={props.onArchive}
+        onUnarchive={props.onUnarchive}
+        onMove={props.onMove}
+      />
+      <Show when={stepRows().length > 0}>
+        <div class="task-step-list" role="list">
+          <For each={stepRows()}>
+            {(row) => (
+              <WorkflowStepRow
+                row={row}
+                loadingTaskId={props.loadingTaskId}
+                onSelect={() => {
+                  if (row.taskId) props.onSelectTask(row.taskId);
+                }}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+function WorkflowStepRow(props: {
+  row: WorkflowSidebarStepRow;
+  loadingTaskId: () => string | null;
+  onSelect: () => void;
+}) {
+  const opening = createMemo(
+    () => Boolean(props.row.taskId) && props.loadingTaskId() === props.row.taskId,
+  );
+  const clickable = createMemo(() => props.row.clickable && !opening());
+
+  return (
+    <div
+      class="task-step-row"
+      role="listitem"
+      data-open={props.row.open ? "true" : undefined}
+      data-checked={props.row.checked ? "true" : undefined}
+      data-disabled={!props.row.clickable ? "true" : undefined}
+      data-loading={opening() ? "true" : undefined}
+    >
+      <button
+        type="button"
+        class="task-step-row__btn"
+        disabled={!clickable()}
+        aria-current={props.row.open ? "true" : undefined}
+        onClick={() => {
+          if (clickable()) props.onSelect();
+        }}
+      >
+        <span class="task-step-row__mark" aria-hidden="true">
+          <Show
+            when={opening()}
+            fallback={
+              <Show when={props.row.checked} fallback={<span class="task-step-row__dot" />}>
+                <Check size={11} strokeWidth={2.6} />
+              </Show>
+            }
+          >
+            <LoaderCircle class="at-spin" size={11} />
+          </Show>
+        </span>
+        <span class="task-step-row__label">{props.row.label}</span>
+      </button>
+    </div>
   );
 }
 

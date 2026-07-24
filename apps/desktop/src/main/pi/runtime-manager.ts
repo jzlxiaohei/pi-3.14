@@ -141,10 +141,19 @@ export class PiRuntimeManager {
 
     const existing =
       options.taskId != null ? await this.tasks.get(options.taskId) : null;
+    const parentTaskId = options.parentTaskId ?? null;
+    if (parentTaskId) {
+      const parent = await this.tasks.get(parentTaskId);
+      if (!parent) throw new Error(`Unknown parent task: ${parentTaskId}`);
+      if (parent.cwd !== cwd) {
+        throw new Error("Child task cwd must match parent workspace");
+      }
+    }
     const state = await this.bindHost({
       cwd,
       sessionPath,
       ignoredSkillNames: existing?.ignoredSkillNames,
+      appendSystemPrompts: options.appendSystemPrompts,
     });
     const timeline = await this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
 
@@ -168,6 +177,7 @@ export class PiRuntimeManager {
               sessionPath: state.sessionPath,
               sessionId: state.sessionId,
               title: options.title?.trim() || folderTitle(cwd),
+              parentTaskId,
             });
     } catch (error) {
       await this.dispose();
@@ -190,13 +200,6 @@ export class PiRuntimeManager {
     if (!task) throw new Error(`Unknown task: ${taskId}`);
 
     this.subscribedWebContents = sender;
-    if (task.sessionAvailability === "missing") {
-      await this.dispose();
-      this.activeTaskId = task.id;
-      this.cwd = task.cwd;
-      await this.tasks.setActiveTask(task.id);
-      return { ok: false, reason: "session_missing", task };
-    }
 
     // Same task already bound: do not abort — renderer HMR / focus remounts hit this path
     // and used to kill in-flight edit approvals. Pass force to reload resources (skills).
@@ -214,9 +217,25 @@ export class PiRuntimeManager {
 
     await this.abort().catch(() => { });
 
+    const appendSystemPrompts = await this.rolePromptsForTask(task);
+    // PI often delays writing the JSONL until the first assistant message, so a
+    // brand-new Task can have sessionPath + sessionId but no file yet. Resume
+    // only when the file exists; otherwise open a fresh session and persist paths.
+    const resumePath =
+      task.sessionPath && task.sessionAvailability === "available" ? task.sessionPath : null;
+    if (task.sessionPath && !resumePath && task.sessionAvailability === "missing") {
+      // Truly missing (deleted file after use) vs not-yet-flushed: both get a new
+      // session bind. UI can still relink if the user finds the old file later.
+      console.warn(
+        `[pi-runtime] session file missing for task ${task.id}; binding a new session`,
+        task.sessionPath,
+      );
+    }
+
     const state = await this.bindHost({
       cwd: task.cwd,
-      sessionPath: task.sessionPath,
+      sessionPath: resumePath,
+      appendSystemPrompts,
       ignoredSkillNames: task.ignoredSkillNames,
     });
     const timeline = await this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
@@ -631,8 +650,12 @@ export class PiRuntimeManager {
     cwd: string;
     sessionPath: string | null;
     ignoredSkillNames?: string[];
+    appendSystemPrompts?: string[];
   }): Promise<PiHostState> {
     await this.ensureChild();
+    const appendSystemPrompts = (options.appendSystemPrompts ?? [])
+      .map((part) => part.trim())
+      .filter(Boolean);
     const state = (await this.send({
       id: randomUUID(),
       type: "create",
@@ -641,10 +664,33 @@ export class PiRuntimeManager {
       ...(options.ignoredSkillNames?.length
         ? { ignoredSkillNames: options.ignoredSkillNames }
         : {}),
+      ...(appendSystemPrompts.length > 0 ? { appendSystemPrompts } : {}),
     })) as PiHostState;
     this.hostBound = true;
     this.cwd = options.cwd;
     return state;
+  }
+
+  /**
+   * Resolve workflow step role prompt for a task (stored on the root workflow step).
+   */
+  private async rolePromptsForTask(task: WorkspaceTask): Promise<string[] | undefined> {
+    const root =
+      task.parentTaskId === null
+        ? task
+        : ((await this.tasks.get(task.rootTaskId)) ?? null);
+    const workflow = root?.workflow;
+    if (!workflow) return undefined;
+
+    const byTaskId = workflow.steps.find((step) => step.taskId === task.id);
+    if (byTaskId?.rolePrompt?.trim()) return [byTaskId.rolePrompt.trim()];
+
+    // Step 1 often runs on the root before taskId is stamped on every step.
+    if (task.parentTaskId === null) {
+      const active = workflow.steps.find((step) => step.id === workflow.stepId);
+      if (active?.rolePrompt?.trim()) return [active.rolePrompt.trim()];
+    }
+    return undefined;
   }
 
   private async ensureChild(): Promise<void> {

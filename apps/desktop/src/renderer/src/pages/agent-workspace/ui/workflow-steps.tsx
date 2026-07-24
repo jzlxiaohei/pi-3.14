@@ -13,6 +13,11 @@ type WorkflowStepsProps = {
   /** gutter = reserved side rail; overlay = compact float when gutter is hidden. */
   placement?: "gutter" | "overlay";
   onWorkflowChange: (workflow: TaskWorkflow | null, starterPrompt: string | null) => void;
+  /**
+   * When set, Done / Skip use this instead of only prefilling the next starter
+   * (e.g. spawn next step subagent session).
+   */
+  onStepAdvance?: (mode: "done" | "skipped") => void;
 };
 
 /**
@@ -76,6 +81,10 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
 
   function advance(mode: "done" | "skipped") {
     if (phase() === "leave") return;
+    if (props.onStepAdvance) {
+      props.onStepAdvance(mode);
+      return;
+    }
     const result = advanceWorkflow(props.workflow, mode);
     const nextWorkflow = workflowView(result.workflow).completed ? null : result.workflow;
     if (nextWorkflow === null) {

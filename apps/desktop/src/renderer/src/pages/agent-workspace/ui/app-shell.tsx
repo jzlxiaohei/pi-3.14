@@ -26,7 +26,13 @@ import {
 } from "../extract-skill";
 import type { WorkspaceModel } from "../model";
 import type { AgentWorkspaceSession } from "../session";
-import { createWorkflow, getPlaybook } from "../workflow/playbooks";
+import {
+  advanceWorkflow,
+  buildStepOpenPrompt,
+  createWorkflow,
+  getPlaybook,
+  workflowView,
+} from "../workflow/playbooks";
 import { AgentTimeline, Composer } from "@/features/agent-timeline/solid";
 import { Button } from "@/shared/ui/button";
 import { Dialog } from "@/shared/ui/dialog";
@@ -237,12 +243,28 @@ export function AppShell(props: AppShellProps) {
 
   async function confirmNewTask(playbookId: TaskPlaybookId | null): Promise<void> {
     setNewTaskOpen(false);
-    const ok = await props.session.createNewTask();
+    if (!playbookId) {
+      await props.session.createNewTask();
+      return;
+    }
+    const playbook = getPlaybook(playbookId);
+    const first = playbook.steps[0]!;
+    // Create once with step rolePrompt — do not rebind.
+    // Brand-new PI sessions often have no JSONL on disk until the first assistant
+    // message; force-activate would false-flag them as "session unavailable".
+    const ok = await props.session.createNewTask({
+      appendSystemPrompts: [first.rolePrompt],
+    });
     if (!ok) return;
-    if (!playbookId) return;
+    const root = props.model.selectedWorkspaceTask();
+    if (!root) return;
     const workflow = createWorkflow(playbookId);
-    const starter = getPlaybook(playbookId).steps[0]?.starterPrompt ?? null;
-    await persistWorkflow(workflow, starter);
+    workflow.steps = workflow.steps.map((step) =>
+      step.id === first.id
+        ? { ...step, taskId: root.id, rolePrompt: first.rolePrompt }
+        : step,
+    );
+    await persistWorkflow(workflow, first.starterPrompt);
   }
 
   function refreshInspector() {
@@ -400,9 +422,70 @@ export function AppShell(props: AppShellProps) {
   ): Promise<void> {
     const task = props.model.selectedWorkspaceTask();
     if (!task) return;
-    const updated = await window.piDesktop.tasks.update({ id: task.id, workflow });
+    // Workflow state always lives on the Root Task.
+    const rootId = task.rootTaskId;
+    const updated = await window.piDesktop.tasks.update({ id: rootId, workflow });
     if (updated) props.model.upsertTask(updated, true, false);
     if (starterPrompt) props.session.prefillDraft(starterPrompt);
+  }
+
+  /**
+   * Advance playbook step: mark done/skipped, spawn next step as a Child Task
+   * (independent session + rolePrompt), activate it, prefill handoff + starter.
+   */
+  async function advanceWorkflowStep(mode: "done" | "skipped"): Promise<void> {
+    const root = props.model.selectedWorkspaceTask();
+    const workflow = root?.workflow;
+    if (!root || !workflow) return;
+
+    const handoff = lastAssistantHandoff(props.session.items());
+    const result = advanceWorkflow(workflow, mode);
+
+    // Playbook finished.
+    if (workflowView(result.workflow).completed || !result.nextStepDef) {
+      await persistWorkflow(
+        workflowView(result.workflow).completed ? null : result.workflow,
+        null,
+      );
+      return;
+    }
+
+    const nextDef = result.nextStepDef;
+    const childId = await props.session.openWorkflowStepSession({
+      parentTaskId: root.rootTaskId,
+      cwd: root.cwd,
+      title: `${nextDef.label} · ${root.title}`.slice(0, 120),
+      rolePrompt: nextDef.rolePrompt,
+    });
+    if (!childId) {
+      notifyError("无法创建下一步 session");
+      return;
+    }
+
+    const steps = result.workflow.steps.map((step) =>
+      step.id === nextDef.id
+        ? { ...step, taskId: childId, rolePrompt: nextDef.rolePrompt, status: "active" as const }
+        : step,
+    );
+    const nextWorkflow: TaskWorkflow = {
+      ...result.workflow,
+      steps,
+    };
+    // Workflow metadata stays on the root even while the child session is active.
+    await persistWorkflow(nextWorkflow, buildStepOpenPrompt(nextDef, handoff));
+  }
+
+  function lastAssistantHandoff(
+    items: { kind: string; text?: string }[],
+  ): string | null {
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+      const item = items[i];
+      if (item?.kind === "assistant" && typeof item.text === "string" && item.text.trim()) {
+        const text = item.text.trim();
+        return text.length > 4000 ? `${text.slice(0, 3999)}…` : text;
+      }
+    }
+    return null;
   }
 
   async function setIgnoredSkillNames(names: string[]): Promise<void> {
@@ -651,6 +734,7 @@ export function AppShell(props: AppShellProps) {
                             disabled={props.session.isCreatingSession()}
                             placement="overlay"
                             workflow={workflow()}
+                            onStepAdvance={(mode) => void advanceWorkflowStep(mode)}
                             onWorkflowChange={(next, starter) => {
                               void persistWorkflow(next, starter);
                             }}
@@ -744,6 +828,7 @@ export function AppShell(props: AppShellProps) {
                           disabled={props.session.isCreatingSession()}
                           placement="gutter"
                           workflow={activeWorkflow()!}
+                          onStepAdvance={(mode) => void advanceWorkflowStep(mode)}
                           onWorkflowChange={(next, starter) => {
                             void persistWorkflow(next, starter);
                           }}

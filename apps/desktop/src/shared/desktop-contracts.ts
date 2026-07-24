@@ -33,6 +33,16 @@ export type TaskWorkflowStepStatus = "pending" | "active" | "done" | "skipped";
 export type TaskWorkflowStep = {
   id: string;
   status: TaskWorkflowStepStatus;
+  /**
+   * Task that owns this step’s PI Session (subagent unit).
+   * Step 1 often equals the Root Task id; later steps are Child Tasks.
+   */
+  taskId?: string;
+  /**
+   * Snapshot of the step role prompt when the step was activated
+   * (so main can rebind host without importing renderer playbooks).
+   */
+  rolePrompt?: string;
 };
 
 /** Task-shell SOP progress — decoupled from chat/timeline. */
@@ -130,6 +140,13 @@ export type PiSessionCreateOptions = {
   sessionPath?: string | null;
   taskId?: string;
   title?: string;
+  /** Create as a Child Task under this Root/parent Task. */
+  parentTaskId?: string | null;
+  /**
+   * Extra system prompt segments for this session bind (e.g. workflow step role).
+   * Appended after host defaults (questionnaire, etc.).
+   */
+  appendSystemPrompts?: string[];
 };
 
 /** Write a skill into the user's PI personal library (~/.pi/agent/skills). */
@@ -493,6 +510,8 @@ export type PiHostCommand =
       cwd: string;
       sessionPath?: string | null;
       ignoredSkillNames?: string[];
+      /** Role / step prompts appended after built-in host prompts. */
+      appendSystemPrompts?: string[];
     }
   | { id: string; type: "dispose" }
   | { id: string; type: "get_state" }

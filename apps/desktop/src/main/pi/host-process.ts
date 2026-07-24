@@ -72,13 +72,19 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
         const ignored = new Set(
           (command.ignoredSkillNames ?? []).map((name) => name.trim()).filter(Boolean),
         );
+        const appendSystemPrompt = [
+          QUESTIONNAIRE_SYSTEM_PROMPT,
+          ...(command.appendSystemPrompts ?? [])
+            .map((part) => part.trim())
+            .filter(Boolean),
+        ];
         host = await createEmbeddedPiHost({
           cwd: command.cwd,
           ...(command.sessionPath ? { sessionPath: command.sessionPath } : {}),
           toolApproval: sessionAutoApprove,
           services: {
             resourceLoaderOptions: {
-              appendSystemPrompt: [QUESTIONNAIRE_SYSTEM_PROMPT],
+              appendSystemPrompt,
               ...(ignored.size > 0
                 ? {
                     skillsOverride: (current) => ({

@@ -170,8 +170,14 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     return current;
   });
 
-  async function createNewTask(): Promise<boolean> {
-    return openTaskSession({});
+  async function createNewTask(options?: {
+    appendSystemPrompts?: string[];
+  }): Promise<boolean> {
+    return openTaskSession({
+      ...(options?.appendSystemPrompts?.length
+        ? { appendSystemPrompts: options.appendSystemPrompts }
+        : {}),
+    });
   }
 
   /**
@@ -196,6 +202,8 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
   async function openTaskSession(options: {
     cwd?: string | null;
     title?: string;
+    parentTaskId?: string | null;
+    appendSystemPrompts?: string[];
   }): Promise<boolean> {
     if (isBusy()) {
       await abort();
@@ -223,6 +231,10 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
       const result = await window.piDesktop.session.create({
         cwd: pickedCwd,
         ...(options.title?.trim() ? { title: options.title.trim() } : {}),
+        ...(options.parentTaskId ? { parentTaskId: options.parentTaskId } : {}),
+        ...(options.appendSystemPrompts?.length
+          ? { appendSystemPrompts: options.appendSystemPrompts }
+          : {}),
       });
       if (result.cancelled) {
         if (generation === openGeneration) setIsReady(false);
@@ -252,6 +264,26 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     } finally {
       if (generation === openGeneration) setIsCreatingSession(false);
     }
+  }
+
+  /**
+   * Spawn a Child Task + new PI Session for a workflow step (subagent unit).
+   * Returns the new task id, or null on failure.
+   */
+  async function openWorkflowStepSession(options: {
+    parentTaskId: string;
+    cwd: string;
+    title: string;
+    rolePrompt: string;
+  }): Promise<string | null> {
+    const ok = await openTaskSession({
+      cwd: options.cwd,
+      title: options.title,
+      parentTaskId: options.parentTaskId,
+      appendSystemPrompts: [options.rolePrompt],
+    });
+    if (!ok) return null;
+    return activeTaskId();
   }
 
   /**
@@ -798,6 +830,7 @@ export function createAgentWorkspaceSession(model: WorkspaceModel) {
     ),
     continueTurn,
     createNewTask,
+    openWorkflowStepSession,
     prefillDraft,
     rebindActiveTask,
     relinkUnavailableTask,

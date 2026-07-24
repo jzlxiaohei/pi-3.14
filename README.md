@@ -1,8 +1,8 @@
 # PIE
 
-**Personal Intelligent Environment** — a desktop **code agent** for real software work.
+**Personal Intelligent Environment** — a desktop shell around [**PI**](https://pi.dev) (the terminal **code agent**).
 
-Not another chat box: **tasks**, an **execution timeline**, **tool approval**, and **git-aware review** — local-first on your machine.
+PI owns the agent runtime: models, tools, sessions, skills, and provider auth. PIE is the local-first **desktop product** on top — **tasks**, an **execution timeline**, **tool approval**, **git-aware review**, and branch/context UX — so the same PI harness is usable as a real workspace, not only a TUI chat.
 
 <p align="center">
   <a href="#screenshots"><strong>Screenshots</strong></a> ·
@@ -65,6 +65,7 @@ What you can use **today** in the desktop app:
 - Personal skills via PI (`~/.pi/agent/skills`)
 
 ### Platform
+- **Built on PI** — same runtime, sessions, skills, and provider login as the PI code agent
 - **Local-first** Electron app — data stays on your machine
 - **Orbit** UI — calm pale-blue surfaces, dark mode tokens
 - Multi-provider models through PI (**xAI / OpenAI / Anthropic / OpenRouter**, …)
@@ -77,7 +78,7 @@ Not done yet — don’t treat these as shipping product features:
 
 | Area | Status | Notes |
 |------|--------|--------|
-| **Subagents** in the desktop product | **TODO** | `@pi-3.14/subagents` package exists; end-to-end product UX (spawn, child tasks, timeline) not finished |
+| **Subagents** in the desktop product | **In progress** | Workflow steps spawn Child Task sessions + per-step `rolePrompt` (see [ADR 0002](docs/adr/0002-workflow-step-subagents.md)); generic model-driven subagent tool still later |
 | Skills management UI | **TODO** | Extract is a first slice; browse / attach / organize skills is later |
 | Richer workflow engine | **TODO** | Playbooks are lightweight; full automation paths TBD |
 | Polished packaging / onboarding | **TODO** | Early product; install & auth UX still evolving |
@@ -86,22 +87,38 @@ Not done yet — don’t treat these as shipping product features:
 
 ## Quick start
 
-**Requires** Node.js **≥ 22.19** and **pnpm 11.10**.
+**Requires** Node.js **≥ 22.19**, **pnpm 11.10**, and a working [PI](https://pi.dev) install (`pi` on your `PATH`).
 
 ```sh
 pnpm install
 pnpm desktop:dev
 ```
 
-Package a local app:
+### Login (providers)
+
+PIE does **not** ship its own auth UI. Use PI’s login flow so credentials land in the shared PI agent store (`~/.pi/agent/`, e.g. `auth.json`):
+
+```sh
+pi
+```
+
+In the PI interactive session, run:
+
+```text
+/login
+```
+
+Then pick the provider (OAuth subscription or API-key path, depending on what PI offers). After that, restart or reopen PIE — the desktop host reads the same PI credentials/models.
+
+You can still set API keys via env (e.g. `XAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) the same way PI accepts them; `/login` is the usual path for subscription providers (Claude, Codex, xAI OAuth, …).
+
+### Package a local app
 
 ```sh
 pnpm desktop:build
 pnpm desktop:package   # dir build
 pnpm desktop:dist      # installer (e.g. dmg)
 ```
-
-Configure model providers the same way as PI (API keys / OAuth in the PI agent environment). Typical env examples: `XAI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.
 
 ---
 

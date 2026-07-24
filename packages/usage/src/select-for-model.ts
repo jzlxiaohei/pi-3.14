@@ -4,12 +4,13 @@ const USAGE_PROVIDERS = new Set<UsageProviderId>([
   "openai-codex",
   "anthropic",
   "openrouter",
+  "xai",
 ]);
 
 /**
  * Map a PI model provider id onto a subscription / credit meter, if any.
- * Providers without a known meter (e.g. `xai`) return null — callers must not
- * fall back to another provider's usage.
+ * Providers without a known meter return null — callers must not fall back to
+ * another provider's usage.
  */
 export function resolveUsageProviderId(
   modelProvider: string | null | undefined,

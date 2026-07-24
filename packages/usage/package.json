@@ -27,7 +27,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc -p tsconfig.build.json",
     "pretest": "pnpm build",
-    "test": "node --import tsx --test src/*.test.ts",
+    "test": "node --import tsx --test src/*.test.ts src/providers/*.test.ts",
     "typecheck": "tsc --noEmit",
     "prepack": "pnpm clean && pnpm build"
   },

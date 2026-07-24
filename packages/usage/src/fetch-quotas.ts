@@ -1,6 +1,7 @@
 import { fetchAnthropicQuota } from "./providers/anthropic.js";
 import { fetchCodexQuota } from "./providers/codex.js";
 import { fetchOpenRouterQuota } from "./providers/openrouter.js";
+import { fetchXaiQuota } from "./providers/xai.js";
 import type {
   FetchProviderQuotasOptions,
   ProviderAuthCredential,
@@ -8,7 +9,7 @@ import type {
   UsageProviderId,
 } from "./types.js";
 
-const ALL: UsageProviderId[] = ["openai-codex", "anthropic", "openrouter"];
+const ALL: UsageProviderId[] = ["openai-codex", "anthropic", "openrouter", "xai"];
 
 /**
  * Fetch subscription / credit meters for the credentials supplied by the caller.
@@ -53,6 +54,11 @@ async function fetchOne(
       });
     case "openrouter":
       return fetchOpenRouterQuota(credential, {
+        includeRaw: options.includeRaw,
+        fetchImpl: options.fetchImpl,
+      });
+    case "xai":
+      return fetchXaiQuota(credential, {
         includeRaw: options.includeRaw,
         fetchImpl: options.fetchImpl,
       });

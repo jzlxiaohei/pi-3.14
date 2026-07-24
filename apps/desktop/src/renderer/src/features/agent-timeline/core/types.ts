@@ -52,8 +52,14 @@ export type TimelineBranchSummary = {
 export type TimelineCompaction = {
   id: string;
   kind: "compaction";
+  /** Response: model-written summary injected into context. */
   text: string;
   timestamp: number;
+  /** Request-side: tokens in context when compaction ran. */
+  tokensBefore?: number | null;
+  firstKeptEntryId?: string | null;
+  readFiles?: string[];
+  modifiedFiles?: string[];
 };
 
 export type TimelineItem =

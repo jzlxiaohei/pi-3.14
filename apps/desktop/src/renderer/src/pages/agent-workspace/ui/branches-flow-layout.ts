@@ -1,19 +1,25 @@
 import { Graph, layout } from "@dagrejs/dagre";
-import type { PiBranchFlowGraph } from "../../../../../shared/desktop-contracts";
+import type {
+  PiBranchFlowGraph,
+  PiCompactionDetail,
+} from "../../../../../shared/desktop-contracts";
 
 export const BRANCH_NODE_WIDTH = 220;
 /** Padding + kind + 2 lines of label (must match CSS line-clamp). */
 export const BRANCH_NODE_HEIGHT_USER = 72;
 export const BRANCH_NODE_HEIGHT_SUMMARY = 72;
+export const BRANCH_NODE_HEIGHT_COMPACTION = 72;
 
 export type LaidOutBranchNode = {
   id: string;
-  kind: "user" | "turn_summary";
+  kind: "user" | "turn_summary" | "compaction";
   label: string;
   preview: string;
   onActivePath: boolean;
   isFork: boolean;
   childCount: number;
+  tags?: string[];
+  compaction?: PiCompactionDetail;
   x: number;
   y: number;
   width: number;
@@ -53,7 +59,11 @@ export function layoutBranchFlow(graph: PiBranchFlowGraph): LaidOutBranchGraph {
 
   for (const node of graph.nodes) {
     const height =
-      node.kind === "user" ? BRANCH_NODE_HEIGHT_USER : BRANCH_NODE_HEIGHT_SUMMARY;
+      node.kind === "user"
+        ? BRANCH_NODE_HEIGHT_USER
+        : node.kind === "compaction"
+          ? BRANCH_NODE_HEIGHT_COMPACTION
+          : BRANCH_NODE_HEIGHT_SUMMARY;
     g.setNode(node.id, {
       width: BRANCH_NODE_WIDTH,
       height,
@@ -78,7 +88,7 @@ export function layoutBranchFlow(graph: PiBranchFlowGraph): LaidOutBranchGraph {
       width: number;
       height: number;
       label?: string;
-      kind?: "user" | "turn_summary";
+      kind?: "user" | "turn_summary" | "compaction";
       onActivePath?: boolean;
     };
     const source = graph.nodes.find((node) => node.id === id);
@@ -90,6 +100,8 @@ export function layoutBranchFlow(graph: PiBranchFlowGraph): LaidOutBranchGraph {
       onActivePath: source?.onActivePath ?? Boolean(raw.onActivePath),
       isFork: source?.isFork ?? false,
       childCount: source?.childCount ?? 0,
+      ...(source?.tags?.length ? { tags: source.tags } : {}),
+      ...(source?.compaction ? { compaction: source.compaction } : {}),
       x: raw.x - raw.width / 2,
       y: raw.y - raw.height / 2,
       width: raw.width,

@@ -27,15 +27,25 @@ const anthropicOk: ProviderQuotaSnapshot = {
   ],
 };
 
+const xaiOk: ProviderQuotaSnapshot = {
+  provider: "xai",
+  status: "ok",
+  fetchedAt: 1,
+  planLabel: "mgmt",
+  windows: [
+    { id: "credits", label: "credits", usedPercent: 20, resetAtMs: null, windowSeconds: null },
+  ],
+};
+
 describe("resolveUsageProviderId", () => {
   it("maps known model providers onto quota meters", () => {
     assert.equal(resolveUsageProviderId("openai-codex"), "openai-codex");
     assert.equal(resolveUsageProviderId("anthropic"), "anthropic");
     assert.equal(resolveUsageProviderId("openrouter"), "openrouter");
+    assert.equal(resolveUsageProviderId("xai"), "xai");
   });
 
   it("returns null when the model provider has no quota meter", () => {
-    assert.equal(resolveUsageProviderId("xai"), null);
     assert.equal(resolveUsageProviderId("unknown-provider"), null);
     assert.equal(resolveUsageProviderId(null), null);
     assert.equal(resolveUsageProviderId(undefined), null);
@@ -49,9 +59,9 @@ describe("selectQuotasForModel", () => {
     assert.deepEqual(selected, [anthropicOk]);
   });
 
-  it("does not fall back to another provider when the active model has no meter", () => {
-    const selected = selectQuotasForModel([codexOk, anthropicOk], "xai");
-    assert.deepEqual(selected, []);
+  it("selects xai meter without falling back to other providers", () => {
+    assert.deepEqual(selectQuotasForModel([codexOk, xaiOk], "xai"), [xaiOk]);
+    assert.deepEqual(selectQuotasForModel([codexOk, anthropicOk], "xai"), []);
   });
 
   it("returns an empty list when model provider is unknown or missing", () => {

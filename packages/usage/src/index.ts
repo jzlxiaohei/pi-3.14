@@ -19,3 +19,4 @@ export { resolveUsageProviderId, selectQuotasForModel } from "./select-for-model
 export { fetchCodexQuota } from "./providers/codex.js";
 export { fetchAnthropicQuota } from "./providers/anthropic.js";
 export { fetchOpenRouterQuota } from "./providers/openrouter.js";
+export { fetchXaiQuota } from "./providers/xai.js";

@@ -1,5 +1,5 @@
 /** Providers with a known subscription / credit meter we can query. */
-export type UsageProviderId = "openai-codex" | "anthropic" | "openrouter";
+export type UsageProviderId = "openai-codex" | "anthropic" | "openrouter" | "xai";
 
 export type QuotaWindow = {
   /** Stable id within the provider payload. */
@@ -47,10 +47,16 @@ export type ProviderQuotaSnapshot = ProviderQuotaOk | ProviderQuotaFailure;
 
 export type ProviderAuthCredential = {
   provider: UsageProviderId;
-  /** OAuth access token or API key, depending on provider. */
+  /**
+   * OAuth access token, inference API key, or (for `xai`) Management API key.
+   * xAI billing requires a Management Key — not the OAuth token and not the
+   * inference API key.
+   */
   accessToken: string;
   /** ChatGPT account id for Codex WHAM; optional (JWT may carry it). */
   accountId?: string;
+  /** xAI team id for Management billing endpoints; resolved via key validation if omitted. */
+  teamId?: string;
   /** Optional expires-at (ms) for UI stale hints. */
   expiresAtMs?: number;
 };

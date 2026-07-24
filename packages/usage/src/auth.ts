@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderAuthCredential, UsageProviderId } from "./types.js";
 
-const SUPPORTED: UsageProviderId[] = ["openai-codex", "anthropic", "openrouter"];
+const SUPPORTED: UsageProviderId[] = ["openai-codex", "anthropic", "openrouter", "xai"];
 
 export type LoadPiAuthOptions = {
   /** Defaults to `~/.pi/agent/auth.json`. */
@@ -36,6 +36,11 @@ export async function loadPiAuthCredentials(
   for (const provider of SUPPORTED) {
     if (!wanted.has(provider)) continue;
     const entry = file[provider];
+    if (provider === "xai") {
+      const credential = parseXaiManagementCredential(entry);
+      if (credential) out.push(credential);
+      continue;
+    }
     const credential = parseAuthEntry(provider, entry);
     if (credential) out.push(credential);
   }
@@ -63,7 +68,7 @@ function parseAuthEntry(
 
   if (type === "api_key" || typeof record.key === "string") {
     const key = typeof record.key === "string" ? record.key : "";
-    if (!key || key.startsWith("!") || key.includes("$")) {
+    if (!key || isDeferredSecret(key)) {
       // Shell / env deferred keys are not resolved here.
       return null;
     }
@@ -74,4 +79,35 @@ function parseAuthEntry(
   }
 
   return null;
+}
+
+/**
+ * xAI billing is Management-API only. Prefer `managementKey` on the `xai`
+ * auth entry; OAuth access tokens and inference API keys are rejected upstream.
+ */
+function parseXaiManagementCredential(entry: unknown): ProviderAuthCredential | null {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const record = entry as Record<string, unknown>;
+
+  const managementKey =
+    (typeof record.managementKey === "string" && record.managementKey) ||
+    (typeof record.management_key === "string" && record.management_key) ||
+    "";
+
+  if (!managementKey || isDeferredSecret(managementKey)) return null;
+
+  const teamId =
+    (typeof record.teamId === "string" && record.teamId) ||
+    (typeof record.team_id === "string" && record.team_id) ||
+    undefined;
+
+  return {
+    provider: "xai",
+    accessToken: managementKey,
+    teamId: teamId || undefined,
+  };
+}
+
+function isDeferredSecret(value: string): boolean {
+  return value.startsWith("!") || value.includes("$");
 }

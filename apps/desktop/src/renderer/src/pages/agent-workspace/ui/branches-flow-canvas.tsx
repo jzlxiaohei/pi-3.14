@@ -1,4 +1,4 @@
-import { GitFork } from "lucide-solid";
+import { GitFork, Layers2 } from "lucide-solid";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { PiBranchFlowGraph } from "../../../../../shared/desktop-contracts";
 import { Button } from "@/shared/ui/button";
@@ -28,22 +28,38 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
   const laidOut = createMemo(() => layoutBranchFlow(props.graph));
   const [viewport, setViewport] = createSignal<Viewport>({ x: 0, y: 0, scale: 1 });
   const [dragging, setDragging] = createSignal(false);
-  const [selected, setSelected] = createSignal<LaidOutBranchNode | null>(null);
+  const [selectedId, setSelectedId] = createSignal<string | null>(null);
   let hostRef: HTMLDivElement | undefined;
   let dragOrigin: { x: number; y: number; vx: number; vy: number } | null = null;
+  /** True only while a canvas pan gesture is in progress and moved past threshold. */
   let movedDuringDrag = false;
+  /** Skip background pointerup→clear right after selecting a node. */
+  let ignoreBackgroundClear = false;
+  let prevGraph: PiBranchFlowGraph | undefined;
   let resizeObserver: ResizeObserver | undefined;
 
+  const selected = createMemo(() => {
+    const id = selectedId();
+    if (!id) return null;
+    return laidOut().nodes.find((node) => node.id === id) ?? null;
+  });
+
   createEffect(() => {
-    const graph = laidOut();
-    props.graph;
-    selectNode(null);
-    queueMicrotask(() => fitView(graph.width, graph.height));
+    const graph = props.graph;
+    const layout = laidOut();
+    // Only reset selection when the graph data changes — not on every select/parent update.
+    if (prevGraph !== graph) {
+      prevGraph = graph;
+      selectNode(null);
+      queueMicrotask(() => fitView(layout.width, layout.height));
+    }
   });
 
   function selectNode(node: LaidOutBranchNode | null): void {
-    setSelected(node);
-    props.onSelect?.(node);
+    setSelectedId(node?.id ?? null);
+    // Resolve from current layout so parent always gets a live node snapshot.
+    const live = node ? laidOut().nodes.find((item) => item.id === node.id) ?? node : null;
+    props.onSelect?.(live);
   }
 
   function fitView(width: number, height: number): void {
@@ -109,8 +125,10 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement | null;
+    // Node / preview handle their own interaction — do not start pan or arm clear.
     if (target?.closest(".branches-flow-node, .branches-flow-preview")) return;
     movedDuringDrag = false;
+    ignoreBackgroundClear = false;
     dragOrigin = {
       x: event.clientX,
       y: event.clientY,
@@ -134,21 +152,31 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
   }
 
   function onPointerUp(event: PointerEvent): void {
-    if (!dragOrigin) return;
+    if (!dragOrigin) {
+      movedDuringDrag = false;
+      return;
+    }
+    const panned = movedDuringDrag;
     dragOrigin = null;
+    movedDuringDrag = false;
     setDragging(false);
     try {
       (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
     } catch {
       /* ignore */
     }
-    if (!movedDuringDrag) {
+    // Click empty canvas → clear selection. Skip if a node just selected.
+    if (!panned && !ignoreBackgroundClear) {
       selectNode(null);
     }
+    ignoreBackgroundClear = false;
   }
 
-  function onNodeClick(node: LaidOutBranchNode): void {
-    if (movedDuringDrag) return;
+  function onNodePointerDown(node: LaidOutBranchNode, event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    movedDuringDrag = false;
+    ignoreBackgroundClear = true;
     selectNode(node);
   }
 
@@ -157,9 +185,10 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
     const host = hostRef;
     if (!node || !host) return null;
     const vp = viewport();
+    const panelW = 280;
     const left = vp.x + (node.x + node.width + 12) * vp.scale;
     const top = vp.y + node.y * vp.scale;
-    const maxLeft = Math.max(12, host.clientWidth - 280);
+    const maxLeft = Math.max(12, host.clientWidth - panelW);
     const maxTop = Math.max(12, host.clientHeight - 200);
     return {
       left: `${Math.min(left, maxLeft)}px`,
@@ -225,10 +254,11 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
                   classList={{
                     "branches-flow-node--user": node.kind === "user",
                     "branches-flow-node--summary": node.kind === "turn_summary",
+                    "branches-flow-node--compaction": node.kind === "compaction",
                     "branches-flow-node--active": node.onActivePath,
                     "branches-flow-node--left": !node.onActivePath,
                     "branches-flow-node--fork": node.isFork,
-                    "branches-flow-node--selected": selected()?.id === node.id,
+                    "branches-flow-node--selected": selectedId() === node.id,
                   }}
                   style={{
                     left: `${node.x}px`,
@@ -237,27 +267,37 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
                     height: `${node.height}px`,
                   }}
                   disabled={props.busy}
+                  onPointerDown={(event) => onNodePointerDown(node, event)}
                   onClick={(event) => {
+                    // Keep click for keyboard/accessibility; selection already done on pointerdown.
                     event.stopPropagation();
-                    onNodeClick(node);
+                    event.preventDefault();
                   }}
                 >
                   <span class="branches-flow-node__kind-row">
                     <span class="branches-flow-node__kind">
                       {nodeKindLabel(node.kind, node.onActivePath)}
                     </span>
-                    <Show when={!node.onActivePath}>
-                      <span class="branches-flow-node__left-badge">已离开</span>
-                    </Show>
-                    <Show when={node.isFork}>
-                      <span
-                        class="branches-flow-node__fork-badge"
-                        title={`${node.childCount} 条分叉路径`}
-                      >
-                        <GitFork size={11} />
-                        <span>{node.childCount}</span>
-                      </span>
-                    </Show>
+                    <span class="branches-flow-node__badges">
+                      <Show when={node.kind === "compaction" || node.tags?.includes("压缩")}>
+                        <span class="branches-flow-node__tag branches-flow-node__tag--compaction">
+                          <Layers2 size={10} />
+                          压缩
+                        </span>
+                      </Show>
+                      <Show when={!node.onActivePath}>
+                        <span class="branches-flow-node__left-badge">已离开</span>
+                      </Show>
+                      <Show when={node.isFork}>
+                        <span
+                          class="branches-flow-node__fork-badge"
+                          title={`${node.childCount} 条分叉路径`}
+                        >
+                          <GitFork size={11} />
+                          <span>{node.childCount}</span>
+                        </span>
+                      </Show>
+                    </span>
                   </span>
                   <span class="branches-flow-node__label">{node.label}</span>
                 </button>
@@ -266,53 +306,76 @@ export function BranchesFlowCanvas(props: BranchesFlowCanvasProps) {
           </div>
         </div>
 
-        <Show when={selected()}>
+        <Show when={selected()} keyed>
           {(node) => (
             <div
               class="branches-flow-preview"
               style={previewStyle() ?? undefined}
-              onPointerDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                ignoreBackgroundClear = true;
+              }}
             >
               <div class="branches-flow-preview__head">
-                <strong>{nodeKindLabel(node().kind, node().onActivePath)}</strong>
-                <Show when={node().onActivePath}>
+                <strong>{nodeKindLabel(node.kind, node.onActivePath)}</strong>
+                <Show when={node.kind === "compaction"}>
+                  <span class="branches-flow-preview__badge branches-flow-preview__badge--compaction">
+                    <Layers2 size={11} />
+                    压缩
+                  </span>
+                </Show>
+                <Show when={node.onActivePath}>
                   <span class="branches-flow-preview__badge">当前路径</span>
                 </Show>
-                <Show when={!node().onActivePath}>
+                <Show when={!node.onActivePath}>
                   <span class="branches-flow-preview__badge branches-flow-preview__badge--left">
                     已离开
                   </span>
                 </Show>
-                <Show when={node().isFork}>
+                <Show when={node.isFork}>
                   <span class="branches-flow-preview__badge branches-flow-preview__badge--fork">
                     <GitFork size={11} />
-                    分叉 · {node().childCount}
+                    分叉 · {node.childCount}
                   </span>
                 </Show>
               </div>
-              <p class="branches-flow-preview__body">{node().preview}</p>
+              <p class="branches-flow-preview__body">
+                {node.kind === "compaction"
+                  ? compactGraphPreview(node)
+                  : node.preview}
+              </p>
               <div class="branches-flow-preview__actions">
                 <Button variant="secondary" onClick={() => selectNode(null)}>
                   关闭
                 </Button>
-                <Show when={node().onActivePath}>
+                <Show when={node.onActivePath}>
                   <Button
                     variant="primary"
                     onClick={() => {
-                      const id = node().id;
+                      const id = node.id;
                       selectNode(null);
                       props.onGoto(id);
                     }}
                   >
-                    跳到消息
+                    {node.kind === "compaction" ? "跳到时间线" : "跳到消息"}
                   </Button>
                 </Show>
-                <Show when={!node().onActivePath && node().kind === "user"}>
+                <Show when={!node.onActivePath && node.kind === "user"}>
                   <p class="branches-flow-preview__hint">在下方切换到此旁支，可继续聊</p>
                 </Show>
-                <Show when={!node().onActivePath && node().kind === "turn_summary"}>
+                <Show when={!node.onActivePath && node.kind === "turn_summary"}>
                   <p class="branches-flow-preview__hint">
                     旧模型回合；若要续聊，先切到其上的旁支 user
+                  </p>
+                </Show>
+                <Show when={!node.onActivePath && node.kind === "compaction"}>
+                  <p class="branches-flow-preview__hint">
+                    旁支压缩点；Request / Response 详情在时间线卡片中查看
+                  </p>
+                </Show>
+                <Show when={node.onActivePath && node.kind === "compaction"}>
+                  <p class="branches-flow-preview__hint">
+                    详情（Request / Response）在聊天时间线的压缩卡片中展开
                   </p>
                 </Show>
               </div>
@@ -333,5 +396,13 @@ function nodeKindLabel(
   onActivePath: boolean,
 ): string {
   if (kind === "user") return onActivePath ? "你" : "旁支";
+  if (kind === "compaction") return "压缩";
   return onActivePath ? "回复" : "旧回复";
+}
+
+/** One-line graph hint — full request/response lives on the timeline card. */
+function compactGraphPreview(node: LaidOutBranchNode): string {
+  const tok = node.compaction?.tokensBefore;
+  const tokLabel = tok != null ? `${Math.round(tok / 1000)}k tok` : "context";
+  return `上下文压缩 · ${tokLabel}。展开时间线中的压缩卡片查看 Request / Response。`;
 }

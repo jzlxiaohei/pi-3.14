@@ -198,8 +198,13 @@ export type PiTimelineItem =
   | {
       id: string;
       kind: "compaction";
+      /** Response: model summary text. */
       text: string;
       timestamp: number;
+      tokensBefore?: number | null;
+      firstKeptEntryId?: string | null;
+      readFiles?: string[];
+      modifiedFiles?: string[];
     };
 
 export type PiTimelineSnapshot = {
@@ -210,12 +215,14 @@ export type PiTimelineSnapshot = {
 /** Collapsed session tree for the Branches popover (user-centric). */
 export type PiBranchTreeNode = {
   entryId: string;
-  kind: "user" | "turn_summary";
+  kind: "user" | "turn_summary" | "compaction";
   label: string;
   onActivePath: boolean;
   /** Direct child count in the full session tree (branch signal). */
   childCount: number;
   children: PiBranchTreeNode[];
+  /** Small badges on the card (e.g. 压缩). */
+  tags?: string[];
 };
 
 /** Sibling / alternate root chip for spine + fork-point UI. */
@@ -245,10 +252,21 @@ export type PiBranchSpineView = {
   forkPoint: { siblingForks: PiBranchForkChip[] } | null;
 };
 
+/** Stored compaction payload for graph / timeline detail (request meta + response summary). */
+export type PiCompactionDetail = {
+  /** Context size when compaction ran (request-side signal). */
+  tokensBefore: number | null;
+  firstKeptEntryId: string | null;
+  readFiles: string[];
+  modifiedFiles: string[];
+  /** Model summary written into context (response). */
+  summary: string;
+};
+
 /** Flattened session branch graph for the Branches flow panel. */
 export type PiBranchFlowNode = {
   id: string;
-  kind: "user" | "turn_summary";
+  kind: "user" | "turn_summary" | "compaction";
   /** Short card label. */
   label: string;
   /** Fuller text for the node preview popover. */
@@ -258,6 +276,10 @@ export type PiBranchFlowNode = {
   isFork: boolean;
   /** Direct child count — shown on fork hubs. */
   childCount: number;
+  /** Small badges (e.g. 压缩). */
+  tags?: string[];
+  /** Present when kind is compaction — request meta + response summary. */
+  compaction?: PiCompactionDetail;
 };
 
 export type PiBranchFlowEdge = {

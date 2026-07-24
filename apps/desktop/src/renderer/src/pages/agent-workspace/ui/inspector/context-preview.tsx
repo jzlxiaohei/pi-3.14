@@ -821,6 +821,8 @@ function providerLabel(provider: ProviderQuotaSnapshot["provider"]): string {
       return "Anthropic";
     case "openrouter":
       return "OpenRouter";
+    case "xai":
+      return "xAI";
     default:
       return provider;
   }

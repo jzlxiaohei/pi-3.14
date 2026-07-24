@@ -3532,6 +3532,12 @@ body[data-panel-resizing] .chat-gutter {
   color: var(--text-secondary);
 }
 
+.branches-flow-node--compaction {
+  border-color: color-mix(in srgb, var(--status-warning) 45%, var(--border-default));
+  background: color-mix(in srgb, var(--status-warning-soft) 70%, var(--surface-panel-solid));
+  color: var(--text-primary);
+}
+
 .branches-flow-node--left {
   opacity: 0.55;
   border-style: dashed;
@@ -3541,6 +3547,11 @@ body[data-panel-resizing] .chat-gutter {
 
 .branches-flow-node--left.branches-flow-node--summary {
   opacity: 0.48;
+}
+
+.branches-flow-node--left.branches-flow-node--compaction {
+  opacity: 0.62;
+  border-style: dashed;
 }
 
 .branches-flow-node--active {
@@ -3590,6 +3601,36 @@ body[data-panel-resizing] .chat-gutter {
 
 .branches-flow-node--active .branches-flow-node__kind {
   color: var(--action-primary);
+}
+
+.branches-flow-node--compaction .branches-flow-node__kind {
+  color: var(--status-warning);
+}
+
+.branches-flow-node__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.branches-flow-node__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: var(--weight-medium);
+}
+
+.branches-flow-node__tag--compaction {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
 }
 
 .branches-flow-node__fork-badge {
@@ -3665,6 +3706,11 @@ body[data-panel-resizing] .chat-gutter {
 }
 
 .branches-flow-preview__badge--fork {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+}
+
+.branches-flow-preview__badge--compaction {
   background: var(--status-warning-soft);
   color: var(--status-warning);
 }

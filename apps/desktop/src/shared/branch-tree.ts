@@ -3,6 +3,7 @@ import {
   messageRecord,
   messageRole,
   textContent,
+  type PiSessionEntrySnapshot,
   type PiSessionSnapshot,
 } from "@pi-3.14/session";
 import type {
@@ -13,6 +14,7 @@ import type {
   PiBranchSpineNode,
   PiBranchSpineView,
   PiBranchTreeNode,
+  PiCompactionDetail,
 } from "./desktop-contracts";
 
 /**
@@ -61,14 +63,21 @@ export function buildBranchFlowGraph(snapshot: PiSessionSnapshot): PiBranchFlowG
         node.kind === "user" && entry
           ? textContent(messageRecord(entry)?.content).trim() || node.label
           : node.label;
+      const compaction =
+        node.kind === "compaction" && entry ? compactionDetailFromEntry(entry) : undefined;
       nodes.push({
         id: node.entryId,
         kind: node.kind,
         label: truncateLabel(full, 42),
-        preview: turnPreview(node.kind, node.onActivePath, full),
+        preview:
+          node.kind === "compaction" && compaction
+            ? compactionPreview(compaction)
+            : turnPreview(node.kind, node.onActivePath, full),
         onActivePath: node.onActivePath,
         isFork: node.childCount > 1,
         childCount: node.childCount,
+        ...(node.tags?.length ? { tags: node.tags } : {}),
+        ...(compaction ? { compaction } : {}),
       });
     }
     if (parentId) {
@@ -111,6 +120,25 @@ function buildChildren(
       continue;
     }
 
+    if (entry.type === "compaction") {
+      const children = buildChildren(entry.id, index, active);
+      const detail = compactionDetailFromEntry(entry);
+      const tok =
+        detail.tokensBefore != null
+          ? `${Math.round(detail.tokensBefore / 1000)}k tok`
+          : "context";
+      out.push({
+        entryId: entry.id,
+        kind: "compaction",
+        label: `压缩 · ${tok}`,
+        onActivePath: active.has(entry.id),
+        childCount: children.length,
+        children,
+        tags: ["压缩"],
+      });
+      continue;
+    }
+
     if (messageRole(entry) === "user") {
       const children = buildChildren(entry.id, index, active);
       out.push({
@@ -125,6 +153,7 @@ function buildChildren(
     }
 
     // Collapse linear non-user chain; hang forks off the chain tip.
+    // Stop before compaction so it gets its own tagged node.
     const chain = linearNonUserChain(entry.id, index);
     const tipId = chain.at(-1) ?? entry.id;
     const children = buildChildren(tipId, index, active);
@@ -162,6 +191,22 @@ function buildSpine(
       continue;
     }
 
+    if (entry.type === "compaction") {
+      const detail = compactionDetailFromEntry(entry);
+      const tok =
+        detail.tokensBefore != null
+          ? `${Math.round(detail.tokensBefore / 1000)}k tok`
+          : "context";
+      spine.push({
+        entryId: entry.id,
+        kind: "turn_summary",
+        label: `压缩 · ${tok}`,
+        siblingForks: [],
+      });
+      i += 1;
+      continue;
+    }
+
     if (messageRole(entry) === "user") {
       spine.push({
         entryId: entry.id,
@@ -177,7 +222,14 @@ function buildSpine(
     while (i < activePathEntryIds.length) {
       const nextId = activePathEntryIds[i]!;
       const next = index.byId.get(nextId);
-      if (!next || messageRole(next) === "user" || next.type === "branch_summary") break;
+      if (
+        !next ||
+        messageRole(next) === "user" ||
+        next.type === "branch_summary" ||
+        next.type === "compaction"
+      ) {
+        break;
+      }
       chainIds.push(nextId);
       i += 1;
     }
@@ -256,7 +308,7 @@ function detectForkPoint(
   };
 }
 
-/** Follow single-child non-user links; stop before a user, fork, or branch_summary. */
+/** Follow single-child non-user links; stop before a user, fork, branch_summary, or compaction. */
 function linearNonUserChain(
   startId: string,
   index: ReturnType<typeof buildPiSessionIndex>,
@@ -267,11 +319,46 @@ function linearNonUserChain(
     const kids = index.childrenById.get(cursor) ?? [];
     if (kids.length !== 1) break;
     const only = kids[0]!;
-    if (messageRole(only) === "user" || only.type === "branch_summary") break;
+    if (
+      messageRole(only) === "user" ||
+      only.type === "branch_summary" ||
+      only.type === "compaction"
+    ) {
+      break;
+    }
     ids.push(only.id);
     cursor = only.id;
   }
   return ids;
+}
+
+function compactionDetailFromEntry(entry: PiSessionEntrySnapshot): PiCompactionDetail {
+  const raw = entry.raw;
+  const details =
+    typeof raw.details === "object" && raw.details !== null && !Array.isArray(raw.details)
+      ? (raw.details as Record<string, unknown>)
+      : null;
+  return {
+    tokensBefore: typeof raw.tokensBefore === "number" ? raw.tokensBefore : null,
+    firstKeptEntryId: typeof raw.firstKeptEntryId === "string" ? raw.firstKeptEntryId : null,
+    readFiles: stringList(details?.readFiles),
+    modifiedFiles: stringList(details?.modifiedFiles),
+    summary: typeof raw.summary === "string" ? raw.summary : "",
+  };
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+/** Short graph popover copy — full request/response is on the timeline card. */
+function compactionPreview(detail: PiCompactionDetail): string {
+  const tok =
+    detail.tokensBefore != null
+      ? `${Math.round(detail.tokensBefore / 1000)}k tok`
+      : "context";
+  return `上下文压缩 · ${tok}。详情见时间线压缩卡片。`;
 }
 
 function formatTurnLabel(
@@ -320,6 +407,7 @@ function turnPreview(
   onActivePath: boolean,
   body: string,
 ): string {
+  if (kind === "compaction") return body;
   if (onActivePath) return body;
   if (kind === "turn_summary") {
     return `已离开的模型回合（常见于 edit / 重发后留下的旧回复），不是工具自己分叉。\n\n${body}`;

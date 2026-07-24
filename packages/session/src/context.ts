@@ -92,6 +92,29 @@ export function buildPiContextProjection(
   };
 }
 
+/**
+ * Full active-path messages in chronological order (root → leaf).
+ * Unlike {@link buildPiContextProjection}, this does **not** collapse pre-compaction
+ * history — intended for UI timelines so users can still read earlier turns.
+ */
+export function buildPiPathMessages(
+  snapshot: PiSessionSnapshot,
+  leafId: string | null = snapshot.leafId,
+): {
+  leafId: string | null;
+  pathEntryIds: string[];
+  messages: PiEffectiveMessage[];
+} {
+  const index = buildPiSessionIndex(snapshot);
+  const diagnostics: PiSessionDiagnostic[] = [];
+  const path = resolvePath(leafId, index.byId, diagnostics);
+  return {
+    leafId,
+    pathEntryIds: path.map((entry) => entry.id),
+    messages: path.flatMap(toEffectiveMessage),
+  };
+}
+
 function resolvePath(
   leafId: string | null,
   byId: ReadonlyMap<string, PiSessionEntrySnapshot>,

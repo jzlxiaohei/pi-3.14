@@ -1,6 +1,6 @@
 import type { JsonValue, PiTerminalStopReason } from "@pi-3.14/model";
 import {
-  buildPiContextProjection,
+  buildPiPathMessages,
   buildPiSessionIndex,
   type PiSessionEntrySnapshot,
   type PiSessionSnapshot,
@@ -11,6 +11,9 @@ import type { PiTimelineItem, PiTimelineSnapshot } from "./desktop-contracts";
  * Project the active-path session snapshot into linear timeline items.
  * Authority for committed history after a turn settles.
  *
+ * Uses the **full** active path (not compaction-collapsed model context) so the
+ * UI still shows turns that were summarized out of the provider window.
+ *
  * Pass `leafEntryId` from the live SessionManager after navigate/branch —
  * JSONL `snapshot.leafId` is only the last appended entry.
  */
@@ -18,12 +21,12 @@ export function projectSessionToTimeline(
   snapshot: PiSessionSnapshot,
   leafEntryId: string | null = snapshot.leafId,
 ): PiTimelineSnapshot {
-  const context = buildPiContextProjection(snapshot, leafEntryId);
+  const path = buildPiPathMessages(snapshot, leafEntryId);
   const index = buildPiSessionIndex(snapshot);
   const items: PiTimelineItem[] = [];
   const toolIndexByCallId = new Map<string, number>();
 
-  for (const message of context.messages) {
+  for (const message of path.messages) {
     const entry = index.byId.get(message.sourceEntryId);
     const timestamp = entryTimestamp(entry);
 
@@ -128,11 +131,16 @@ export function projectSessionToTimeline(
 
     if (message.role === "compaction") {
       if (!message.text.trim()) continue;
+      const detail = compactionDetailFromEntry(entry);
       items.push({
         id: message.sourceEntryId,
         kind: "compaction",
         text: message.text,
         timestamp,
+        tokensBefore: detail.tokensBefore,
+        firstKeptEntryId: detail.firstKeptEntryId,
+        readFiles: detail.readFiles,
+        modifiedFiles: detail.modifiedFiles,
       });
     }
   }
@@ -152,9 +160,36 @@ export function projectSessionToTimeline(
   }
 
   return {
-    leafEntryId: context.leafId,
+    leafEntryId: path.leafId,
     items,
   };
+}
+
+function compactionDetailFromEntry(entry: PiSessionEntrySnapshot | undefined): {
+  tokensBefore: number | null;
+  firstKeptEntryId: string | null;
+  readFiles: string[];
+  modifiedFiles: string[];
+} {
+  if (!entry) {
+    return { tokensBefore: null, firstKeptEntryId: null, readFiles: [], modifiedFiles: [] };
+  }
+  const raw = entry.raw;
+  const details =
+    typeof raw.details === "object" && raw.details !== null && !Array.isArray(raw.details)
+      ? (raw.details as Record<string, unknown>)
+      : null;
+  return {
+    tokensBefore: typeof raw.tokensBefore === "number" ? raw.tokensBefore : null,
+    firstKeptEntryId: typeof raw.firstKeptEntryId === "string" ? raw.firstKeptEntryId : null,
+    readFiles: stringList(details?.readFiles),
+    modifiedFiles: stringList(details?.modifiedFiles),
+  };
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function entryTimestamp(entry: PiSessionEntrySnapshot | undefined): number {

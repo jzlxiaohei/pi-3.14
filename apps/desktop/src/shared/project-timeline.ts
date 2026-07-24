@@ -10,9 +10,15 @@ import type { PiTimelineItem, PiTimelineSnapshot } from "./desktop-contracts";
 /**
  * Project the active-path session snapshot into linear timeline items.
  * Authority for committed history after a turn settles.
+ *
+ * Pass `leafEntryId` from the live SessionManager after navigate/branch —
+ * JSONL `snapshot.leafId` is only the last appended entry.
  */
-export function projectSessionToTimeline(snapshot: PiSessionSnapshot): PiTimelineSnapshot {
-  const context = buildPiContextProjection(snapshot);
+export function projectSessionToTimeline(
+  snapshot: PiSessionSnapshot,
+  leafEntryId: string | null = snapshot.leafId,
+): PiTimelineSnapshot {
+  const context = buildPiContextProjection(snapshot, leafEntryId);
   const index = buildPiSessionIndex(snapshot);
   const items: PiTimelineItem[] = [];
   const toolIndexByCallId = new Map<string, number>();
@@ -33,13 +39,25 @@ export function projectSessionToTimeline(snapshot: PiSessionSnapshot): PiTimelin
     }
 
     if (message.role === "assistant") {
-      if (message.text.trim() || message.thinking?.trim()) {
+      const stop = terminalStopReason(entry);
+      const errorMessage = entryErrorMessage(entry);
+      const hasBody = Boolean(message.text.trim() || message.thinking?.trim());
+      // Keep failed/aborted empty turns so the UI can show Connection error / abort,
+      // not only a retry affordance under a silent user bubble.
+      if (hasBody || stop === "error" || stop === "aborted" || errorMessage) {
         items.push({
           id: message.sourceEntryId,
           kind: "assistant",
-          stopReason: terminalStopReason(entry),
+          stopReason: stop,
           text: message.text,
           ...(message.thinking?.trim() ? { thinking: message.thinking } : {}),
+          ...(errorMessage
+            ? { errorMessage }
+            : stop === "error"
+              ? { errorMessage: "Model request failed" }
+              : stop === "aborted"
+                ? { errorMessage: "Turn aborted" }
+                : {}),
           timestamp,
         });
       }
@@ -94,6 +112,28 @@ export function projectSessionToTimeline(snapshot: PiSessionSnapshot): PiTimelin
         toolCallId: message.toolCallId,
         toolName,
       });
+      continue;
+    }
+
+    if (message.role === "branchSummary") {
+      if (!message.text.trim()) continue;
+      items.push({
+        id: message.sourceEntryId,
+        kind: "branch_summary",
+        text: message.text,
+        timestamp,
+      });
+      continue;
+    }
+
+    if (message.role === "compaction") {
+      if (!message.text.trim()) continue;
+      items.push({
+        id: message.sourceEntryId,
+        kind: "compaction",
+        text: message.text,
+        timestamp,
+      });
     }
   }
 
@@ -136,6 +176,14 @@ function terminalStopReason(entry: PiSessionEntrySnapshot | undefined): PiTermin
   return reason === "stop" || reason === "length" || reason === "error" || reason === "aborted"
     ? reason
     : null;
+}
+
+function entryErrorMessage(entry: PiSessionEntrySnapshot | undefined): string | undefined {
+  if (!entry) return undefined;
+  const message = entry.raw.message;
+  if (typeof message !== "object" || message === null || Array.isArray(message)) return undefined;
+  const value = (message as { errorMessage?: unknown }).errorMessage;
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function summarizeTool(

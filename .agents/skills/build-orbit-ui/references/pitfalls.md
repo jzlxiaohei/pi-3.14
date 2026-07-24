@@ -41,12 +41,13 @@ Ark/Zag: one shared base z-index; nest with `--layer-index`. Positioner uses *in
   z-index: calc(var(--z-index, var(--z-modal)) - 1);
 }
 .orbit-select__content,
-.orbit-tooltip__content {
+.orbit-tooltip__content,
+.orbit-popover__content {
   z-index: calc(var(--z-modal) + var(--layer-index, 0));
 }
 ```
 
-Wrappers: `shared/ui/dialog.tsx`, `shared/ui/select.tsx`, `shared/ui/tooltip.tsx`.
+Wrappers: `shared/ui/dialog.tsx`, `shared/ui/select.tsx`, `shared/ui/tooltip.tsx`, `shared/ui/popover.tsx`.
 
 ## Tooltip placement notes
 

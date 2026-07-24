@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, File, Folder, RefreshCw } from "lucide-solid";
+import { ChevronDown, ChevronRight, File, Folder, GitBranch, RefreshCw } from "lucide-solid";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { WorkspaceDirEntry } from "../../../../../../shared/desktop-contracts";
 
@@ -9,6 +9,9 @@ type WorkspaceTreeProps = {
   mode?: "panel" | "drawer";
   /** Drawer-only: start collapsed. */
   defaultCollapsed?: boolean;
+  /** Optional git branch label shown in the panel tree head. */
+  branchLabel?: string | null;
+  onRefreshGit?: () => void;
   onOpenPath?: (path: string) => void;
 };
 
@@ -33,6 +36,11 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
     setCollapsed(props.defaultCollapsed === true);
   });
 
+  function refreshAll() {
+    setRootKey((v) => v + 1);
+    props.onRefreshGit?.();
+  }
+
   return (
     <div
       class="tree-panel"
@@ -56,14 +64,24 @@ export function WorkspaceTree(props: WorkspaceTreeProps) {
             </button>
           }
         >
-          <span class="tree-head__title">Workspace files</span>
+          <div class="tree-head__leading">
+            <span class="tree-head__title">Workspace files</span>
+            <Show when={props.branchLabel}>
+              {(label) => (
+                <span class="tree-head__branch" title={label()}>
+                  <GitBranch size={12} />
+                  {label()}
+                </span>
+              )}
+            </Show>
+          </div>
         </Show>
         <Show when={isPanel() || !collapsed()}>
           <button
             type="button"
             class="tree-refresh"
             aria-label="Refresh file tree"
-            onClick={() => setRootKey((v) => v + 1)}
+            onClick={refreshAll}
           >
             <RefreshCw size={15} />
           </button>

@@ -1,12 +1,28 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { PiHostEvent, PiHostState, PiModelOption, PiThinkingLevel } from "@pi-3.14/model";
 import type {
+  PiHostEvent,
+  PiHostState,
+  PiModelOption,
+  PiPreparedBranchSummary,
+  PiThinkingLevel,
+} from "@pi-3.14/model";
+import type { ProviderQuotaSnapshot } from "@pi-3.14/usage";
+import type {
+  AppPreferences,
+  AppPreferencesUpdate,
   PiActivateTaskResult,
   PiPromptResult,
   PiSessionCreateOptions,
   PiSessionCreateResult,
   PiSessionExportResult,
+  PiSessionInspectResult,
+  PiSessionNavigateRequest,
+  PiSessionNavigateResult,
   PiTasksBootstrap,
+  PiTasksBootstrapRequest,
+  PiTasksArchiveResult,
+  ReviewedFileUpdate,
+  ReviewedFilesRequest,
   PiTimelineSnapshot,
   PiToolApprovalReply,
   PiToolApprovalRequest,
@@ -24,7 +40,11 @@ import type {
   WorkspaceMattSkillsStatus,
   WorkspaceMattSkillsStatusRequest,
   WorkspaceOpenReviewRequest,
+  WorkspacePreferences,
+  WorkspacePreferencesUpdate,
   WorkspaceTask,
+  WorkspaceTaskMoveRequest,
+  WorkspaceTaskRelinkResult,
   WorkspaceTaskUpdate,
 } from "../shared/desktop-contracts";
 
@@ -36,13 +56,29 @@ export type DesktopAppInfo = {
 
 const api = {
   getAppInfo: () => ipcRenderer.invoke("app:get-info") as Promise<DesktopAppInfo>,
+  /** Clipboard via main process — sandboxed preload has no reliable electron.clipboard. */
+  clipboard: {
+    writeText: (text: string) =>
+      ipcRenderer.invoke("clipboard:write-text", text) as Promise<{ ok: true }>,
+  },
   tasks: {
-    bootstrap: () => ipcRenderer.invoke("pi:tasks:bootstrap") as Promise<PiTasksBootstrap>,
+    bootstrap: (request?: PiTasksBootstrapRequest) =>
+      ipcRenderer.invoke("pi:tasks:bootstrap", request) as Promise<PiTasksBootstrap>,
     list: () => ipcRenderer.invoke("pi:tasks:list") as Promise<WorkspaceTask[]>,
-    activate: (taskId: string) =>
-      ipcRenderer.invoke("pi:tasks:activate", taskId) as Promise<PiActivateTaskResult>,
+    listChildren: (parentTaskId: string) =>
+      ipcRenderer.invoke("pi:tasks:list-children", parentTaskId) as Promise<WorkspaceTask[]>,
+    activate: (taskId: string, options?: { force?: boolean }) =>
+      ipcRenderer.invoke("pi:tasks:activate", taskId, options) as Promise<PiActivateTaskResult>,
     update: (request: WorkspaceTaskUpdate) =>
       ipcRenderer.invoke("pi:tasks:update", request) as Promise<WorkspaceTask | null>,
+    move: (request: WorkspaceTaskMoveRequest) =>
+      ipcRenderer.invoke("pi:tasks:move", request) as Promise<WorkspaceTask[]>,
+    relink: (taskId: string) =>
+      ipcRenderer.invoke("pi:tasks:relink", taskId) as Promise<WorkspaceTaskRelinkResult>,
+    archive: (taskId: string) =>
+      ipcRenderer.invoke("pi:tasks:archive", taskId) as Promise<PiTasksArchiveResult>,
+    unarchive: (taskId: string) =>
+      ipcRenderer.invoke("pi:tasks:unarchive", taskId) as Promise<PiTasksArchiveResult>,
   },
   session: {
     abort: () => ipcRenderer.invoke("pi:session:abort") as Promise<void>,
@@ -57,8 +93,24 @@ const api = {
       ipcRenderer.invoke("pi:session:set-model", request) as Promise<PiHostState>,
     setThinkingLevel: (level: PiThinkingLevel) =>
       ipcRenderer.invoke("pi:session:set-thinking-level", level) as Promise<PiHostState>,
+    setAutoApprove: (unlocked: boolean) =>
+      ipcRenderer.invoke("pi:session:set-auto-approve", unlocked) as Promise<{ unlocked: boolean }>,
+    getAutoApprove: () =>
+      ipcRenderer.invoke("pi:session:get-auto-approve") as Promise<{ unlocked: boolean }>,
     getTimeline: () =>
       ipcRenderer.invoke("pi:session:get-timeline") as Promise<PiTimelineSnapshot>,
+    inspect: () =>
+      ipcRenderer.invoke("pi:session:inspect") as Promise<PiSessionInspectResult>,
+    navigate: (request: PiSessionNavigateRequest) =>
+      ipcRenderer.invoke("pi:session:navigate", request) as Promise<PiSessionNavigateResult>,
+    prepareBranchSummary: () =>
+      ipcRenderer.invoke("pi:session:prepare-branch-summary") as Promise<PiPreparedBranchSummary>,
+    getPreparedBranchSummary: () =>
+      ipcRenderer.invoke(
+        "pi:session:get-prepared-branch-summary",
+      ) as Promise<PiPreparedBranchSummary | null>,
+    clearPreparedBranchSummary: () =>
+      ipcRenderer.invoke("pi:session:clear-prepared-branch-summary") as Promise<void>,
     exportSession: () =>
       ipcRenderer.invoke("pi:session:export") as Promise<PiSessionExportResult>,
     getPendingApproval: () =>
@@ -87,11 +139,35 @@ const api = {
     },
     prompt: (text: string) =>
       ipcRenderer.invoke("pi:session:prompt", text) as Promise<PiPromptResult>,
+    continueTurn: () =>
+      ipcRenderer.invoke("pi:session:continue") as Promise<PiPromptResult>,
+  },
+  preferences: {
+    updateApp: (patch: AppPreferencesUpdate) =>
+      ipcRenderer.invoke("preferences:update-app", patch) as Promise<AppPreferences>,
+    getWorkspace: (cwd: string) =>
+      ipcRenderer.invoke("preferences:get-workspace", cwd) as Promise<WorkspacePreferences>,
+    updateWorkspace: (cwd: string, patch: WorkspacePreferencesUpdate) =>
+      ipcRenderer.invoke("preferences:update-workspace", cwd, patch) as Promise<WorkspacePreferences>,
+    getDraft: (taskId: string) =>
+      ipcRenderer.invoke("preferences:get-draft", taskId) as Promise<string>,
+    saveDraft: (taskId: string, draft: string) =>
+      ipcRenderer.invoke("preferences:save-draft", taskId, draft) as Promise<void>,
+    getReviewedPaths: (request: ReviewedFilesRequest) =>
+      ipcRenderer.invoke("preferences:get-reviewed", request) as Promise<string[]>,
+    setReviewedFile: (request: ReviewedFileUpdate) =>
+      ipcRenderer.invoke("preferences:set-reviewed", request) as Promise<void>,
+    clearReviewedFile: (request: Omit<ReviewedFileUpdate, "fingerprint">) =>
+      ipcRenderer.invoke("preferences:clear-reviewed", request) as Promise<void>,
   },
   skills: {
     personalDir: () => ipcRenderer.invoke("skills:personal-dir") as Promise<{ dir: string }>,
     writePersonal: (request: PersonalSkillWriteRequest) =>
       ipcRenderer.invoke("skills:write-personal", request) as Promise<PersonalSkillWriteResult>,
+  },
+  usage: {
+    providerQuotas: (force?: boolean) =>
+      ipcRenderer.invoke("usage:provider-quotas", force) as Promise<ProviderQuotaSnapshot[]>,
   },
   workspace: {
     list: (request: WorkspaceListRequest) =>

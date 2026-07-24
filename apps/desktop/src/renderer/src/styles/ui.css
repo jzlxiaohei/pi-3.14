@@ -162,6 +162,15 @@
   cursor: inherit;
 }
 
+/* Icon buttons live in dense toolbars — don't stretch the trigger to 100%. */
+.orbit-tooltip__trigger:has(> .icon-button) {
+  display: inline-flex;
+  width: auto;
+  max-width: none;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
 .orbit-tooltip__content {
   z-index: calc(var(--z-modal) + var(--layer-index, 0));
   max-width: min(420px, 80vw);
@@ -183,6 +192,7 @@
 
 .orbit-tabs__list {
   height: 43px;
+  flex: 0 0 43px;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -251,6 +261,65 @@
 
 .orbit-tabs__content {
   min-height: 0;
+}
+
+.orbit-collapsible {
+  min-width: 0;
+}
+
+.orbit-collapsible__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.orbit-collapsible__trigger {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0;
+  border: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.orbit-collapsible__trigger:hover {
+  color: var(--text-primary);
+}
+
+.orbit-collapsible__indicator {
+  display: inline-flex;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.orbit-collapsible[data-state="open"] .orbit-collapsible__indicator {
+  transform: rotate(90deg);
+}
+
+.orbit-collapsible__trailing {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.orbit-collapsible__description {
+  margin: var(--space-1-5) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
+
+.orbit-collapsible__content {
+  margin-top: var(--space-2);
 }
 
 .orbit-splitter {
@@ -383,6 +452,24 @@
   flex-direction: column;
 }
 
+.orbit-dialog__positioner:has(.orbit-dialog__content--branches) {
+  padding: var(--topbar-height) 12px 12px;
+  align-content: stretch;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
+.orbit-dialog__content--branches {
+  width: calc(100vw - 24px);
+  height: calc(100vh - var(--topbar-height) - 12px);
+  max-width: none;
+  max-height: calc(100vh - var(--topbar-height) - 12px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
 .orbit-dialog__content--review .review-window {
   flex: 1 1 auto;
   height: 100%;
@@ -478,9 +565,61 @@
   color: var(--status-success);
 }
 
+.confirm-dialog__check--secondary {
+  color: var(--text-tertiary);
+  font-size: var(--text-2xs);
+}
+
+.confirm-dialog__option {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.confirm-dialog__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  cursor: pointer;
+}
+
+.confirm-dialog__option .confirm-dialog__check {
+  margin-top: 0;
+  color: var(--text-primary);
+}
+
+.confirm-dialog__option .confirm-dialog__check strong {
+  display: block;
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+}
+
+.confirm-dialog__option-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: var(--text-2xs);
+}
+
+.confirm-dialog__check--secondary {
+  color: var(--text-tertiary);
+  font-size: var(--text-2xs);
+}
+
+.confirm-dialog__check input {
+  margin-top: 2px;
+}
+
 .confirm-dialog__footer {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 12px 16px 14px;
   border-top: 1px solid var(--border-subtle);
@@ -667,6 +806,94 @@
   border-radius: var(--radius-sm);
   background: var(--surface-panel-solid);
   box-shadow: var(--shadow-md);
+}
+
+.orbit-popover__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.orbit-popover__positioner {
+  z-index: var(--z-index, var(--z-modal));
+  /* fitViewport sets --available-*; don't let the box grow past the window. */
+  max-width: min(100vw - 40px, var(--available-width, 100vw));
+  max-height: min(100vh - 40px, var(--available-height, 100vh));
+}
+
+.orbit-popover__content {
+  box-sizing: border-box;
+  z-index: calc(var(--z-modal) + var(--layer-index, 0));
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
+  max-width: 100%;
+  max-height: min(48vh, 360px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel-solid);
+  box-shadow: var(--shadow-md);
+  /* Do not set transform here — Positioner owns translate3d for placement. */
+  opacity: 1;
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.orbit-popover__content[data-state="closed"] {
+  opacity: 0;
+}
+
+.orbit-popover__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px 7px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.orbit-popover__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orbit-popover__close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.orbit-popover__close:hover {
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
+
+.orbit-popover__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px 10px;
 }
 
 .orbit-select__item {

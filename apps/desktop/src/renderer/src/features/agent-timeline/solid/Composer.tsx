@@ -1,4 +1,4 @@
-import { ArrowRight, Code2, FolderOpen, Square } from "lucide-solid";
+import { ArrowRight, Code2, FolderOpen, Shield, ShieldOff, Square, Undo2 } from "lucide-solid";
 import type { JSX } from "solid-js";
 import { Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -10,11 +10,17 @@ const COMPOSER_MAX_HEIGHT = 200;
 type ComposerProps = {
   /** Increment when draft is programmatically prefilled — triggers attention motion. */
   attentionKey?: number;
+  /** Session tool policy: false = Ask, true = Auto this chat. */
+  autoApproveUnlocked?: boolean;
   disabled?: boolean;
   modelLabel: string;
   modelOptions: SelectOption[];
   modelValue: string | null;
-  onAbort: () => void;
+  /** Abort in-flight turn; keep leaf on the current path. */
+  onStop: () => void;
+  /** Abort and drop incomplete assistant path when model output exists. */
+  onRevert: () => void;
+  onAutoApproveChange?: (unlocked: boolean) => void;
   onInput: (value: string) => void;
   onModelChange: (value: string) => void;
   onSelectWorkspace: () => void;
@@ -24,6 +30,7 @@ type ComposerProps = {
   thinkingLevel: string;
   thinkingOptions: SelectOption[];
   thinkingValue: string | null;
+  toolbarHud?: JSX.Element;
   toolbarAction?: JSX.Element;
   value: string;
   workspaceLabel: string;
@@ -91,7 +98,7 @@ export function Composer(props: ComposerProps) {
           placeholder="Ask PI to change, explain, inspect, or verify this workspace..."
         />
         <div class="at-composer-toolbar">
-          <div>
+          <div class="at-composer-toolbar__left">
             <button
               class="at-context-pill"
               type="button"
@@ -118,8 +125,36 @@ export function Composer(props: ComposerProps) {
                 onValueChange={props.onThinkingChange}
               />
             </Show>
+            <Show when={props.onAutoApproveChange}>
+              <button
+                class="at-context-pill at-permission-toggle"
+                type="button"
+                disabled={props.disabled || props.streaming}
+                data-mode={props.autoApproveUnlocked ? "auto" : "ask"}
+                title={
+                  props.autoApproveUnlocked
+                    ? "Auto this chat — ask-tier tools run without prompting (destructive rm still blocked)"
+                    : "Ask — prompt before edit/write and risky bash"
+                }
+                onClick={() => props.onAutoApproveChange?.(!props.autoApproveUnlocked)}
+              >
+                <Show
+                  when={props.autoApproveUnlocked}
+                  fallback={
+                    <>
+                      <Shield size={14} /> Ask
+                    </>
+                  }
+                >
+                  <ShieldOff size={14} /> Auto
+                </Show>
+              </button>
+            </Show>
           </div>
-          <div>
+          <Show when={props.toolbarHud}>
+            <div class="at-composer-toolbar__hud">{props.toolbarHud}</div>
+          </Show>
+          <div class="at-composer-toolbar__right">
             {props.toolbarAction}
             <Show
               when={props.modelOptions.length > 0}
@@ -148,8 +183,11 @@ export function Composer(props: ComposerProps) {
                 </IconButton>
               }
             >
-              <IconButton label="Stop generation" size="sm" variant="danger" onClick={props.onAbort}>
+              <IconButton label="Stop" size="sm" onClick={props.onStop}>
                 <Square size={13} fill="currentColor" />
+              </IconButton>
+              <IconButton label="Revert" size="sm" variant="danger" onClick={props.onRevert}>
+                <Undo2 size={14} />
               </IconButton>
             </Show>
           </div>

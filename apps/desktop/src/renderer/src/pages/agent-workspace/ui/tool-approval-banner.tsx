@@ -17,13 +17,13 @@ export function ToolApprovalBanner(props: ToolApprovalBannerProps) {
           <div class="tool-approval-copy">
             <ShieldAlert size={18} />
             <div>
-              <strong>Allow `{request().toolName}`?</strong>
+              <strong>Allow `{request().toolName}` for this chat?</strong>
               <p>{summarizeArgs(request().args)}</p>
             </div>
           </div>
           <div class="tool-approval-actions">
             <Button variant="secondary" onClick={props.onDeny}>Deny</Button>
-            <Button variant="primary" onClick={props.onAllow}>Allow</Button>
+            <Button variant="primary" onClick={props.onAllow}>Allow for this chat</Button>
           </div>
         </div>
       )}

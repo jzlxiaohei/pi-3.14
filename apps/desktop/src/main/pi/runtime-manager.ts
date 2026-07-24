@@ -4,13 +4,16 @@ import { basename } from "node:path";
 import type {
   PiHostEvent,
   PiHostState,
+  PiLiveInspectSnapshot,
   PiModelOption,
+  PiNavigateTreeResult,
+  PiPreparedBranchSummary,
   PiThinkingLevel,
   PiTurnResult,
 } from "@pi-3.14/model";
+import { analyzePiSession, buildPiContextProjection } from "@pi-3.14/session";
 import { readPiSessionFile } from "@pi-3.14/session/node";
 import {
-  app,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -21,12 +24,17 @@ import type { OpenDialogOptions, SaveDialogOptions } from "electron";
 import hostModulePath from "./host-process?modulePath";
 import type {
   PiActivateTaskResult,
+  PiBranchFlowGraph,
+  PiBranchSpineView,
   PiHostCommand,
   PiHostProcessMessage,
   PiPromptResult,
   PiSessionCreateOptions,
   PiSessionCreateResult,
   PiSessionExportResult,
+  PiSessionInspectResult,
+  PiSessionNavigateRequest,
+  PiSessionNavigateResult,
   PiTasksBootstrap,
   PiTimelineSnapshot,
   PiToolApprovalReply,
@@ -35,10 +43,27 @@ import type {
   TaskWorkflow,
   WorkspaceTask,
 } from "../../shared/desktop-contracts";
+import {
+  buildBranchFlowGraph,
+  buildBranchSpineView,
+  buildBranchTree,
+} from "../../shared/branch-tree";
 import { projectSessionToTimeline } from "../../shared/project-timeline";
-import { TaskStore, taskStorePath } from "./task-store";
+import { snapshotAtLeaf } from "../../shared/session-leaf";
+import type { LegacyPanelPreferences } from "../../shared/desktop-contracts";
+import type { PieStore } from "../persistence/pie-store";
 
 const EMPTY_TIMELINE: PiTimelineSnapshot = { leafEntryId: null, items: [] };
+const EMPTY_BRANCH_SPINE: PiBranchSpineView = {
+  spine: [],
+  otherRoots: [],
+  forkPoint: null,
+};
+const EMPTY_BRANCH_FLOW: PiBranchFlowGraph = {
+  nodes: [],
+  edges: [],
+  forkPoint: null,
+};
 const APPROVAL_TIMEOUT_MS = 120_000;
 const CHILD_START_TIMEOUT_MS = 30_000;
 
@@ -56,7 +81,6 @@ type PendingRequest = {
  * task persistence, JSONL timeline projection, and renderer IPC.
  */
 export class PiRuntimeManager {
-  private readonly tasks = new TaskStore(taskStorePath(app.getPath("userData")));
   private cwd: string | null = null;
   private activeTaskId: string | null = null;
   private subscribedWebContents: WebContents | null = null;
@@ -72,7 +96,7 @@ export class PiRuntimeManager {
   /** Latest approval still waiting on the UI (survives renderer HMR remounts). */
   private activeApprovalRequest: PiToolApprovalRequest | null = null;
 
-  constructor() {
+  constructor(private readonly tasks: PieStore) {
     // Renderer → main: resolve the in-flight approval promise for the host bridge.
     ipcMain.on("pi:session:tool-approval-reply", (_event, reply: PiToolApprovalReply) => {
       const pending = this.pendingApprovals.get(reply.id);
@@ -86,10 +110,11 @@ export class PiRuntimeManager {
     });
   }
 
-  async bootstrap(): Promise<PiTasksBootstrap> {
-    const tasks = await this.tasks.list();
-    const selectedTaskId = await this.tasks.getSelectedId();
-    return { tasks, selectedTaskId };
+  async bootstrap(legacyPanelPreferences?: LegacyPanelPreferences): Promise<PiTasksBootstrap> {
+    const legacyBrowserPreferencesImported =
+      await this.tasks.importLegacyBrowserPreferences(legacyPanelPreferences);
+    const boot = await this.tasks.bootstrap();
+    return { ...boot, legacyBrowserPreferencesImported };
   }
 
   async pickWorkspace(sender: WebContents): Promise<PiWorkspacePickResult> {
@@ -114,69 +139,102 @@ export class PiRuntimeManager {
         ? options.sessionPath
         : null;
 
-    const state = await this.bindHost({ cwd, sessionPath });
-    const timeline = await this.readTimelineSnapshot(state.sessionPath);
+    const existing =
+      options.taskId != null ? await this.tasks.get(options.taskId) : null;
+    const state = await this.bindHost({
+      cwd,
+      sessionPath,
+      ignoredSkillNames: existing?.ignoredSkillNames,
+    });
+    const timeline = await this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
 
-    const task =
-      options.taskId != null
-        ? await this.tasks.update(options.taskId, {
-          cwd,
-          sessionPath: state.sessionPath,
-          sessionId: state.sessionId,
-          status: "idle",
-          ...(options.title?.trim() ? { title: options.title.trim() } : {}),
-        })
-        : await this.tasks.create({
-          cwd,
-          sessionPath: state.sessionPath,
-          sessionId: state.sessionId,
-          title: options.title?.trim() || folderTitle(cwd),
-        });
+    if (!state.sessionPath || !state.sessionId) {
+      await this.dispose();
+      throw new Error("PI did not create a persisted Session for this Task");
+    }
+    let task: WorkspaceTask | null;
+    try {
+      task =
+        options.taskId != null
+          ? await this.tasks.update(options.taskId, {
+              cwd,
+              sessionPath: state.sessionPath,
+              sessionId: state.sessionId,
+              status: "idle",
+              ...(options.title?.trim() ? { title: options.title.trim() } : {}),
+            })
+          : await this.tasks.create({
+              cwd,
+              sessionPath: state.sessionPath,
+              sessionId: state.sessionId,
+              title: options.title?.trim() || folderTitle(cwd),
+            });
+    } catch (error) {
+      await this.dispose();
+      throw error;
+    }
 
     if (!task) throw new Error("Failed to persist workspace task");
     this.activeTaskId = task.id;
-    await this.tasks.select(task.id);
+    await this.tasks.setActiveTask(task.id);
 
     return { cancelled: false, cwd, state, timeline, task };
   }
 
-  async activateTask(sender: WebContents, taskId: string): Promise<PiActivateTaskResult> {
+  async activateTask(
+    sender: WebContents,
+    taskId: string,
+    options?: { force?: boolean },
+  ): Promise<PiActivateTaskResult> {
     const task = await this.tasks.get(taskId);
     if (!task) throw new Error(`Unknown task: ${taskId}`);
 
     this.subscribedWebContents = sender;
+    if (task.sessionAvailability === "missing") {
+      await this.dispose();
+      this.activeTaskId = task.id;
+      this.cwd = task.cwd;
+      await this.tasks.setActiveTask(task.id);
+      return { ok: false, reason: "session_missing", task };
+    }
 
     // Same task already bound: do not abort — renderer HMR / focus remounts hit this path
-    // and used to kill in-flight edit approvals.
-    if (this.activeTaskId === taskId && this.hostBound && this.childReady) {
+    // and used to kill in-flight edit approvals. Pass force to reload resources (skills).
+    if (
+      !options?.force &&
+      this.activeTaskId === taskId &&
+      this.hostBound &&
+      this.childReady
+    ) {
       const state = await this.getState();
-      const timeline = await this.readTimelineSnapshot(state.sessionPath);
+      const timeline = await this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
       this.reshowPendingApproval();
-      return { task, state, timeline };
+      return { ok: true, task, state, timeline };
     }
 
     await this.abort().catch(() => { });
 
-    const sessionPath =
-      task.sessionPath && (await fileExists(task.sessionPath)) ? task.sessionPath : null;
-    const state = await this.bindHost({ cwd: task.cwd, sessionPath });
-    const timeline = await this.readTimelineSnapshot(state.sessionPath);
+    const state = await this.bindHost({
+      cwd: task.cwd,
+      sessionPath: task.sessionPath,
+      ignoredSkillNames: task.ignoredSkillNames,
+    });
+    const timeline = await this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
     const updated =
       (await this.tasks.update(
         task.id,
         {
           sessionPath: state.sessionPath,
           sessionId: state.sessionId,
-          status: "idle",
         },
         { touchUpdatedAt: false },
       )) ?? task;
 
     this.activeTaskId = updated.id;
     this.cwd = updated.cwd;
-    await this.tasks.select(updated.id);
+    await this.tasks.setActiveTask(updated.id);
 
-    return { task: updated, state, timeline };
+    return { ok: true, task: updated, state, timeline };
   }
 
   getPendingApproval(): PiToolApprovalRequest | null {
@@ -190,45 +248,74 @@ export class PiRuntimeManager {
       await this.tasks.setStatus(this.activeTaskId, "running");
     }
 
+    let result: PiTurnResult;
     try {
-      const result = (await this.send({
+      result = (await this.send({
         id: randomUUID(),
         type: "prompt",
         text,
       })) as PiTurnResult;
-      const timeline = await this.readTimelineSnapshot(result.sessionPath);
-      const title = this.activeTaskId
-        ? await this.maybeTitleFromPrompt(this.activeTaskId, text, timeline)
-        : undefined;
-      const task = this.activeTaskId
-        ? await this.tasks.update(
-          this.activeTaskId,
-          {
-            sessionPath: result.sessionPath,
-            sessionId: result.sessionId,
-            status: result.stopReason === "error" ? "error" : "done",
-            ...(title ? { title } : {}),
-          },
-          { moveToFront: true },
-        )
-        : null;
-
-      return { ...result, timeline, task };
     } catch (error) {
-      if (this.activeTaskId) {
-        await this.tasks.setStatus(this.activeTaskId, "error");
-      }
+      if (this.activeTaskId) await this.tasks.setStatus(this.activeTaskId, "error");
       throw error;
     }
+
+    const timeline = await this.readTimelineSnapshot(result.sessionPath, result.leafEntryId);
+    let title: string | undefined;
+    if (this.activeTaskId) {
+      try {
+        title = await this.maybeTitleFromPrompt(this.activeTaskId, text, timeline);
+      } catch {
+        title = undefined;
+      }
+    }
+    const task = this.activeTaskId
+      ? await this.tasks.update(this.activeTaskId, {
+          sessionPath: result.sessionPath,
+          sessionId: result.sessionId,
+          status: result.stopReason === "error" ? "error" : "done",
+          ...(title ? { title } : {}),
+        })
+      : null;
+
+    return { ...result, timeline, task };
+  }
+
+  /** Retry generation from the current leaf without appending a new user message. */
+  async continueTurn(sender: WebContents): Promise<PiPromptResult> {
+    this.subscribedWebContents = sender;
+    this.assertHostBound();
+    if (this.activeTaskId) {
+      await this.tasks.setStatus(this.activeTaskId, "running");
+    }
+
+    let result: PiTurnResult;
+    try {
+      result = (await this.send({
+        id: randomUUID(),
+        type: "continue_turn",
+      })) as PiTurnResult;
+    } catch (error) {
+      if (this.activeTaskId) await this.tasks.setStatus(this.activeTaskId, "error");
+      throw error;
+    }
+    const timeline = await this.readTimelineSnapshot(result.sessionPath, result.leafEntryId);
+    const task = this.activeTaskId
+      ? await this.tasks.update(this.activeTaskId, {
+          sessionPath: result.sessionPath,
+          sessionId: result.sessionId,
+          status: result.stopReason === "error" ? "error" : "done",
+        })
+      : null;
+
+    return { ...result, timeline, task };
   }
 
   async abort(): Promise<void> {
     this.rejectAllApprovals("Aborted");
     if (!this.child || !this.hostBound) return;
     await this.send({ id: randomUUID(), type: "abort" }).catch(() => { });
-    if (this.activeTaskId) {
-      await this.tasks.setStatus(this.activeTaskId, "idle");
-    }
+    if (this.activeTaskId) this.tasks.idleIfRunning(this.activeTaskId);
   }
 
   async getState(): Promise<PiHostState> {
@@ -268,6 +355,23 @@ export class PiRuntimeManager {
     })) as PiHostState;
   }
 
+  async setAutoApprove(unlocked: boolean): Promise<{ unlocked: boolean }> {
+    this.assertHostBound();
+    return (await this.send({
+      id: randomUUID(),
+      type: "set_auto_approve",
+      unlocked,
+    })) as { unlocked: boolean };
+  }
+
+  async getAutoApprove(): Promise<{ unlocked: boolean }> {
+    this.assertHostBound();
+    return (await this.send({
+      id: randomUUID(),
+      type: "get_auto_approve",
+    })) as { unlocked: boolean };
+  }
+
   /** Copy the active session JSONL via a Save dialog (local share / backup). */
   async exportSession(sender: WebContents): Promise<PiSessionExportResult> {
     let sessionPath: string | null = null;
@@ -305,11 +409,180 @@ export class PiRuntimeManager {
 
   async getTimeline(): Promise<PiTimelineSnapshot> {
     const state = await this.getState();
-    return this.readTimelineSnapshot(state.sessionPath);
+    return this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
+  }
+
+  async inspectSession(): Promise<PiSessionInspectResult> {
+    this.assertHostBound();
+    let live: PiLiveInspectSnapshot | null = null;
+    let sessionPath: string | null = null;
+    let leafEntryId: string | null = null;
+    try {
+      live = (await this.send({
+        id: randomUUID(),
+        type: "inspect_live",
+      })) as PiLiveInspectSnapshot;
+      const state = await this.getState();
+      sessionPath = state.sessionPath;
+      leafEntryId = state.leafEntryId;
+    } catch {
+      live = null;
+    }
+
+    if (!sessionPath && this.activeTaskId) {
+      sessionPath = (await this.tasks.get(this.activeTaskId))?.sessionPath ?? null;
+    }
+
+    if (!sessionPath || !(await fileExists(sessionPath))) {
+      return {
+        sessionPath,
+        leafEntryId,
+        live,
+        analysis: null,
+        context: null,
+        branchTree: [],
+        branchSpine: EMPTY_BRANCH_SPINE,
+        branchFlow: EMPTY_BRANCH_FLOW,
+      };
+    }
+
+    try {
+      const fileSnapshot = await readPiSessionFile(sessionPath);
+      const snapshot = snapshotAtLeaf(fileSnapshot, leafEntryId ?? fileSnapshot.leafId);
+      return {
+        sessionPath,
+        leafEntryId: snapshot.leafId,
+        live,
+        analysis: analyzePiSession(snapshot),
+        context: buildPiContextProjection(snapshot, snapshot.leafId),
+        branchTree: buildBranchTree(snapshot),
+        branchSpine: buildBranchSpineView(snapshot),
+        branchFlow: buildBranchFlowGraph(snapshot),
+      };
+    } catch {
+      return {
+        sessionPath,
+        leafEntryId,
+        live,
+        analysis: null,
+        context: null,
+        branchTree: [],
+        branchSpine: EMPTY_BRANCH_SPINE,
+        branchFlow: EMPTY_BRANCH_FLOW,
+      };
+    }
+  }
+
+  /**
+   * Navigate the in-file session tree. Optionally prompt after navigate (edit/branch).
+   * Aborts an in-flight turn first.
+   */
+  async navigateSession(
+    sender: WebContents,
+    request: PiSessionNavigateRequest,
+  ): Promise<PiSessionNavigateResult> {
+    this.subscribedWebContents = sender;
+    this.assertHostBound();
+    this.rejectAllApprovals("Navigating session tree");
+    await this.send({ id: randomUUID(), type: "abort" }).catch(() => {});
+
+    const nav = (await this.send({
+      id: randomUUID(),
+      type: "navigate_tree",
+      entryId: request.entryId,
+      summarize: request.summarize ?? false,
+    })) as PiNavigateTreeResult;
+
+    const state = await this.getState();
+    const timeline = await this.readTimelineSnapshot(state.sessionPath, state.leafEntryId);
+    if (this.activeTaskId) {
+      await this.tasks.update(this.activeTaskId, {
+        sessionPath: state.sessionPath,
+        sessionId: state.sessionId,
+      });
+    }
+
+    if (nav.cancelled || !request.promptText?.trim()) {
+      return {
+        ...nav,
+        timeline,
+        sessionPath: state.sessionPath,
+        leafEntryId: state.leafEntryId,
+      };
+    }
+
+    const prompt = await this.prompt(sender, request.promptText.trim());
+    return {
+      ...nav,
+      timeline: prompt.timeline,
+      sessionPath: prompt.sessionPath,
+      leafEntryId: prompt.leafEntryId,
+      prompt,
+    };
+  }
+
+  async prepareBranchSummary(): Promise<PiPreparedBranchSummary> {
+    this.assertHostBound();
+    return (await this.send({
+      id: randomUUID(),
+      type: "prepare_branch_summary",
+    })) as PiPreparedBranchSummary;
+  }
+
+  async getPreparedBranchSummary(): Promise<PiPreparedBranchSummary | null> {
+    if (!this.hostBound || !this.childReady) return null;
+    return (await this.send({
+      id: randomUUID(),
+      type: "get_prepared_branch_summary",
+    })) as PiPreparedBranchSummary | null;
+  }
+
+  async clearPreparedBranchSummary(): Promise<void> {
+    if (!this.hostBound || !this.childReady) return;
+    await this.send({ id: randomUUID(), type: "clear_prepared_branch_summary" });
   }
 
   async listTasks(): Promise<WorkspaceTask[]> {
-    return this.tasks.list();
+    return this.tasks.listRootTasks();
+  }
+
+  async moveTask(request: import("../../shared/desktop-contracts").WorkspaceTaskMoveRequest) {
+    return this.tasks.moveRootTask(request);
+  }
+
+  async relinkTaskSession(
+    sender: WebContents,
+    taskId: string,
+  ): Promise<import("../../shared/desktop-contracts").WorkspaceTaskRelinkResult> {
+    const task = await this.tasks.get(taskId);
+    if (!task) return { ok: false, error: `Unknown task: ${taskId}` };
+    if (!task.sessionId) {
+      return { ok: false, error: "This legacy Task has no Session ID and cannot be relinked safely" };
+    }
+    const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+    const options: OpenDialogOptions = {
+      title: "Locate PI Session",
+      buttonLabel: "Use Session",
+      properties: ["openFile"],
+      filters: [{ name: "PI Session", extensions: ["jsonl"] }],
+    };
+    const pick = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    const sessionPath = pick.filePaths[0];
+    if (pick.canceled || !sessionPath) return { ok: false, cancelled: true, error: "Cancelled" };
+    try {
+      const snapshot = await readPiSessionFile(sessionPath);
+      if (snapshot.header?.id !== task.sessionId) {
+        return { ok: false, error: "Selected file is not the original PI Session for this Task" };
+      }
+      return { ok: true, task: await this.tasks.relinkSession(task.id, sessionPath) };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Selected file is not a valid PI Session",
+      };
+    }
   }
 
   async updateTask(
@@ -317,13 +590,30 @@ export class PiRuntimeManager {
     patch: {
       title?: string;
       workflow?: TaskWorkflow | null;
+      ignoredSkillNames?: string[];
     },
   ): Promise<WorkspaceTask | null> {
     return this.tasks.update(id, patch);
   }
 
+  /** Soft-delete a Task Tree. PI Session JSONL remains untouched. */
+  async archiveTask(taskId: string): Promise<import("../../shared/desktop-contracts").PiTasksArchiveResult> {
+    const previousActive = this.activeTaskId;
+    const result = await this.tasks.archiveTree(taskId);
+    const disposed = previousActive !== null && result.activeTaskId !== previousActive;
+    if (disposed) await this.dispose();
+    return { ...result, disposed };
+  }
+
+  async unarchiveTask(taskId: string): Promise<import("../../shared/desktop-contracts").PiTasksArchiveResult> {
+    const result = await this.tasks.restoreTree(taskId);
+    return { ...result, disposed: false };
+  }
+
   async dispose(): Promise<void> {
     this.rejectAllApprovals("Session disposed");
+    const taskId = this.activeTaskId;
+    if (taskId) this.tasks.interruptIfRunning(taskId);
     if (this.child && this.childReady) {
       await this.send({ id: randomUUID(), type: "dispose" }).catch(() => { });
     }
@@ -340,6 +630,7 @@ export class PiRuntimeManager {
   private async bindHost(options: {
     cwd: string;
     sessionPath: string | null;
+    ignoredSkillNames?: string[];
   }): Promise<PiHostState> {
     await this.ensureChild();
     const state = (await this.send({
@@ -347,6 +638,9 @@ export class PiRuntimeManager {
       type: "create",
       cwd: options.cwd,
       sessionPath: options.sessionPath,
+      ...(options.ignoredSkillNames?.length
+        ? { ignoredSkillNames: options.ignoredSkillNames }
+        : {}),
     })) as PiHostState;
     this.hostBound = true;
     this.cwd = options.cwd;
@@ -397,6 +691,14 @@ export class PiRuntimeManager {
       }
       this.pending.clear();
       this.rejectAllApprovals("PI host process exited");
+      const interruptedTaskId = this.activeTaskId;
+      if (interruptedTaskId) {
+        try {
+          this.tasks.interruptIfRunning(interruptedTaskId);
+        } catch (error) {
+          console.error("[pi-runtime] failed to persist interrupted status", error);
+        }
+      }
       if (this.subscribedWebContents && !this.subscribedWebContents.isDestroyed()) {
         this.subscribedWebContents.send("pi:session:host-exited", {
           code: code ?? null,
@@ -587,18 +889,29 @@ export class PiRuntimeManager {
     timeline: PiTimelineSnapshot,
   ): Promise<string | undefined> {
     const existing = await this.tasks.get(taskId);
-    if (!existing) return undefined;
-    if (!existing.title.startsWith("New task")) return undefined;
-    const firstUser = timeline.items.find((item) => item.kind === "user")?.text ?? prompt;
-    const title = firstUser.replace(/\s+/g, " ").trim().slice(0, 72);
+    if (!existing?.title.startsWith("New task")) return undefined;
+    const firstUser =
+      timeline?.items?.find((item) => item.kind === "user")?.text ?? prompt ?? "";
+    const title = String(firstUser).replace(/\s+/g, " ").trim().slice(0, 72);
     return title || undefined;
   }
 
-  private async readTimelineSnapshot(sessionPath: string | null): Promise<PiTimelineSnapshot> {
+  private async readTimelineSnapshot(
+    sessionPath: string | null,
+    leafEntryId?: string | null,
+  ): Promise<PiTimelineSnapshot> {
     if (!sessionPath) return EMPTY_TIMELINE;
     try {
       const snapshot = await readPiSessionFile(sessionPath);
-      return projectSessionToTimeline(snapshot);
+      let liveLeaf = leafEntryId;
+      if (liveLeaf === undefined && this.hostBound) {
+        try {
+          liveLeaf = (await this.getState()).leafEntryId;
+        } catch {
+          liveLeaf = snapshot.leafId;
+        }
+      }
+      return projectSessionToTimeline(snapshot, liveLeaf ?? snapshot.leafId);
     } catch {
       return EMPTY_TIMELINE;
     }

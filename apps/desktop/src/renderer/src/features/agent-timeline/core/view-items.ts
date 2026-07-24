@@ -15,6 +15,10 @@ export function buildTimelineViewEntries(
   const visible = items.filter((item) => {
     if (item.kind !== "assistant") return true;
     if (item.text.trim().length > 0 || Boolean(item.thinking?.trim())) return true;
+    // Failed/aborted empty turns must stay visible (retry alone is not enough signal).
+    if (item.errorMessage || item.stopReason === "error" || item.stopReason === "aborted") {
+      return true;
+    }
     return options.runStatus === "streaming" && item.id === items.at(-1)?.id;
   });
 
@@ -45,7 +49,9 @@ export function buildTimelineViewEntries(
 
 /**
  * Extra status under the timeline while a turn is live.
- * Idle "waiting for model" is handled by the empty assistant placeholder — skip it here.
+ * Empty assistant placeholders already say "Waiting for model…" — skip those.
+ * After tools finish (before the next thinking/text tokens), still show a wait cue
+ * so the turn does not look finished.
  */
 export function timelineActivityLabel(
   items: TimelineItem[],
@@ -61,5 +67,12 @@ export function timelineActivityLabel(
       return item.summary;
     }
   }
-  return null;
+
+  const last = items.at(-1);
+  if (last?.kind === "assistant") {
+    // Bubble already shows waiting / streaming chrome.
+    return null;
+  }
+  // Common gap: tools just completed, model has not started the next assistant chunk yet.
+  return "Waiting for model…";
 }

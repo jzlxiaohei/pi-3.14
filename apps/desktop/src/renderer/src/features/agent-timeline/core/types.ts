@@ -23,6 +23,8 @@ export type TimelineAssistantMessage = {
   text: string;
   /** Streaming/final model reasoning, when the provider exposes it. */
   thinking?: string;
+  /** Set when the turn failed (e.g. provider Connection error). */
+  errorMessage?: string;
   timestamp: number;
 };
 
@@ -40,7 +42,26 @@ export type TimelineToolCall = {
   toolName: string;
 };
 
-export type TimelineItem = TimelineUserMessage | TimelineAssistantMessage | TimelineToolCall;
+export type TimelineBranchSummary = {
+  id: string;
+  kind: "branch_summary";
+  text: string;
+  timestamp: number;
+};
+
+export type TimelineCompaction = {
+  id: string;
+  kind: "compaction";
+  text: string;
+  timestamp: number;
+};
+
+export type TimelineItem =
+  | TimelineUserMessage
+  | TimelineAssistantMessage
+  | TimelineToolCall
+  | TimelineBranchSummary
+  | TimelineCompaction;
 
 export type TimelineState = {
   activeAssistantId: string | null;

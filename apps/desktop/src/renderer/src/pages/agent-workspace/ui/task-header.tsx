@@ -1,9 +1,18 @@
-import { Download, GitBranch, GitCompareArrows, LoaderCircle, PanelRight, Route, X } from "lucide-solid";
+import {
+  Download,
+  GitBranch,
+  GitCompareArrows,
+  GitFork,
+  LoaderCircle,
+  PanelRight,
+  Route,
+  X,
+} from "lucide-solid";
 import { Show, createSignal } from "solid-js";
 import type { TimelineRunStatus } from "@/features/agent-timeline";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
-import type { TaskSummary } from "../model";
+import type { TaskSummary, TaskStatus } from "../model";
 
 type TaskHeaderProps = {
   branch?: string | null;
@@ -12,12 +21,16 @@ type TaskHeaderProps = {
   loading?: boolean;
   /** Playbook title when this task has an engineering path. */
   playbookTitle?: string | null;
+  branchesOpen?: boolean;
   canExportSession?: boolean;
+  canOpenBranches?: boolean;
   onClearPlaybook?: () => void;
   onExportSession?: () => void;
   onReviewChanges?: () => void;
+  onToggleBranches?: () => void;
   onToggleInspectorPanel?: () => void;
   status: TimelineRunStatus;
+  taskStatus?: TaskStatus;
   task: TaskSummary | null;
 };
 
@@ -36,7 +49,7 @@ export function TaskHeader(props: TaskHeaderProps) {
         <div class="title-row">
           <span class="task-state" data-loading={props.loading ? "true" : undefined}>
             {props.loading ? <LoaderCircle class="at-spin" size={12} /> : <span />}
-            {props.loading ? "Opening" : statusLabel(props.status)}
+            {props.loading ? "Opening" : statusLabel(props.status, props.taskStatus)}
           </span>
           <h1 title={props.task?.title ?? undefined}>{props.task?.title ?? "Start a task"}</h1>
         </div>
@@ -99,6 +112,15 @@ export function TaskHeader(props: TaskHeaderProps) {
         </div>
       </div>
       <div class="header-actions">
+        <IconButton
+          label="Session branches"
+          size="sm"
+          active={props.branchesOpen}
+          disabled={props.loading || !props.canOpenBranches}
+          onClick={() => props.onToggleBranches?.()}
+        >
+          <GitFork size={16} />
+        </IconButton>
         <Button
           variant="secondary"
           disabled={props.loading || !props.canExportSession}
@@ -136,7 +158,8 @@ export function TaskHeader(props: TaskHeaderProps) {
   );
 }
 
-function statusLabel(status: TimelineRunStatus): string {
+function statusLabel(status: TimelineRunStatus, taskStatus?: TaskStatus): string {
+  if (status === "idle" && taskStatus === "interrupted") return "Interrupted";
   switch (status) {
     case "streaming":
       return "Working";

@@ -34,8 +34,9 @@ aborted tool turn 时出现 `No tool call found for function call output`。
 
 工具审批相关能力也放在本包，避免各宿主重复实现：
 
-- `toolNeedsApproval`：读类工具自动放行
+- `classifyToolApproval` / `classifyBashCommand`：allow / ask / deny（含 bash 前缀与破坏性 `rm` 熔断）
+- `toolNeedsApproval`：兼容旧 API（`kind !== "allow"`）
 - `raceApproval`：turn abort 时 fail-closed
-- `createSessionAutoApprove`：首次 Allow 后本 binding 内自动放行（切换 session 时 `reset()`）
+- `createSessionAutoApprove`：首次 Allow 或 `setUnlocked(true)` 后本 binding 内自动放行 ask 级工具；deny 永不自动；切换 session 时 `reset()`）
 
 详见 skill `pi-3-14-usage` 的 Host Pitfalls 一节。

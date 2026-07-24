@@ -1,12 +1,8 @@
-import { CheckCircle, ChevronDown, ChevronRight, LoaderCircle, Wrench, XCircle } from "lucide-solid";
-import { Index, Match, Show, Switch, createEffect, on } from "solid-js";
+import { CheckCircle, LoaderCircle, PanelRight, ShieldAlert, Wrench, XCircle } from "lucide-solid";
+import { Index, Match, Show, Switch, createEffect, createSignal } from "solid-js";
 import type { TimelineToolCall } from "../core";
-import { ToolCallBlock } from "./ToolCallBlock";
-import {
-  isToolGroupOpen,
-  setTimelineSectionOpen,
-  toolGroupKey,
-} from "./timeline-ui-state";
+import { ToolCallDetail } from "./ToolCallBlock";
+import { ToolFloatPanel } from "./tool-float-panel";
 
 type ToolCallGroupProps = {
   /** Stable view entry id (`tool-group-<firstToolCallId>`). */
@@ -18,85 +14,120 @@ type ToolCallGroupProps = {
   onDenyApproval?: () => void;
 };
 
+/** One-line tool group in the message list; full tool details open in a side float. */
 export function ToolCallGroup(props: ToolCallGroupProps) {
-  let bodyRef: HTMLDivElement | undefined;
-  let pinnedScrollTop = 0;
-  const anchorId = () => props.tools[0]?.toolCallId ?? props.groupId;
-  const groupKey = () => toolGroupKey(anchorId());
-  const open = () => isToolGroupOpen(anchorId(), props.tools, props.active);
+  const [open, setOpen] = createSignal(false);
+  let anchorRef: HTMLButtonElement | undefined;
   const errorCount = () => props.tools.filter((tool) => tool.status === "error").length;
   const runningCount = () => props.tools.filter((tool) => tool.status === "running").length;
+  const pending = () =>
+    props.pendingApprovalToolCallId != null &&
+    props.tools.some((tool) => tool.toolCallId === props.pendingApprovalToolCallId);
 
-  // New tools used to remount this body (scroll → 0). Keep position across appends.
-  createEffect(
-    on(
-      () => props.tools.length,
-      () => {
-        const el = bodyRef;
-        if (!el) return;
-        const top = pinnedScrollTop;
-        queueMicrotask(() => {
-          if (bodyRef) bodyRef.scrollTop = top;
-        });
-      },
-    ),
-  );
+  createEffect(() => {
+    if (pending()) setOpen(true);
+  });
+
+  const title = () => {
+    if (pending()) {
+      const tool = props.tools.find((item) => item.toolCallId === props.pendingApprovalToolCallId);
+      return tool ? `Allow ${tool.toolName}?` : "Tool approval";
+    }
+    const n = props.tools.length;
+    return n === 1
+      ? (props.tools[0]?.summary ?? "Tool call")
+      : `${n} tool calls`;
+  };
 
   return (
-    <div class="at-tool-group" data-open={open() ? "true" : "false"}>
+    <div
+      class="at-tool-group"
+      data-open={open() ? "true" : "false"}
+      data-status={
+        pending() ? "approval" : runningCount() > 0 ? "running" : errorCount() > 0 ? "error" : "success"
+      }
+    >
       <button
+        ref={anchorRef}
         type="button"
-        class="at-tool-group-toggle"
+        class="at-tool-row-trigger"
         aria-expanded={open()}
-        onClick={() => setTimelineSectionOpen(groupKey(), !open())}
+        aria-label={open() ? "关闭工具详情" : "查看工具详情"}
+        onClick={() => setOpen(!open())}
       >
         <span class="at-tool-icon">
-          <Wrench size={15} />
+          <Show when={pending()} fallback={<Wrench size={15} />}>
+            <ShieldAlert size={15} />
+          </Show>
         </span>
         <span class="at-tool-copy">
           <strong>
-            {props.tools.length} tool {props.tools.length === 1 ? "call" : "calls"}
-            <span class="at-tool-preview"> · {previewLabels(props.tools)}</span>
-            <Show when={errorCount() > 0}>
-              <span class="at-tool-fail-count"> · {errorCount()} failed</span>
+            <Show
+              when={pending()}
+              fallback={
+                <>
+                  {props.tools.length} tool {props.tools.length === 1 ? "call" : "calls"}
+                  <span class="at-tool-preview"> · {previewLabels(props.tools)}</span>
+                  <Show when={errorCount() > 0}>
+                    <span class="at-tool-fail-count"> · {errorCount()} failed</span>
+                  </Show>
+                </>
+              }
+            >
+              Allow{" "}
+              {props.tools.find((tool) => tool.toolCallId === props.pendingApprovalToolCallId)
+                ?.toolName ?? "tool"}
+              ?
             </Show>
           </strong>
         </span>
         <span class="at-tool-state">
           <Switch>
+            <Match when={pending()}>
+              <ShieldAlert size={16} />
+            </Match>
             <Match when={runningCount() > 0}>
               <LoaderCircle class="at-spin" size={16} />
             </Match>
             <Match when={errorCount() > 0}>
-              <XCircle class="at-tool-fail-icon" size={16} />
+              <XCircle size={16} />
             </Match>
-            <Match when={true}>
+            <Match when={errorCount() === 0}>
               <CheckCircle size={16} />
             </Match>
           </Switch>
-          {open() ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span class="at-tool-open-hint" aria-hidden="true" title="查看详情">
+            <PanelRight size={14} />
+          </span>
         </span>
       </button>
-      <Show when={open()}>
-        <div
-          ref={bodyRef}
-          class="at-tool-group-body"
-          onScroll={(event) => {
-            pinnedScrollTop = event.currentTarget.scrollTop;
-          }}
-        >
+
+      <ToolFloatPanel
+        open={open()}
+        title={title()}
+        getAnchor={() => anchorRef}
+        onOpenChange={setOpen}
+      >
+        <div class="at-tool-popover__list">
           <Index each={props.tools}>
-            {(tool) => (
-              <ToolCallBlock
-                item={tool()}
-                pendingApproval={props.pendingApprovalToolCallId === tool().toolCallId}
-                onAllow={props.onAllowApproval}
-                onDeny={props.onDenyApproval}
-              />
-            )}
+            {(tool, index) => {
+              const alone = () => props.tools.length === 1;
+              const isPending = () => props.pendingApprovalToolCallId === tool().toolCallId;
+              const defaultOpen = () => alone() || isPending();
+              return (
+                <ToolCallDetail
+                  index={index + 1}
+                  defaultOpen={defaultOpen()}
+                  item={tool()}
+                  pendingApproval={isPending()}
+                  onAllow={props.onAllowApproval}
+                  onDeny={props.onDenyApproval}
+                />
+              );
+            }}
           </Index>
         </div>
-      </Show>
+      </ToolFloatPanel>
     </div>
   );
 }

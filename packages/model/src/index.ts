@@ -26,6 +26,11 @@ export interface PiModelOption {
 export interface PiHostState {
   sessionId: string;
   sessionPath: string | null;
+  /**
+   * Live SessionManager leaf. JSONL alone only exposes the last appended entry,
+   * which diverges after in-file navigate/branch until the next append.
+   */
+  leafEntryId: string | null;
   isStreaming: boolean;
   isCompacting: boolean;
   model: PiModelRef | null;
@@ -66,6 +71,8 @@ export type PiHostEvent =
       /** Model reasoning/thinking blocks, when the provider streams them. */
       thinking?: string;
       stopReason?: PiStopReason;
+      /** Present when stopReason is error (or provider attaches a failure reason). */
+      errorMessage?: string;
     }
   | {
       type: "queue_update";
@@ -98,6 +105,90 @@ export interface PiTurnResult {
   sessionPath: string | null;
   leafEntryId: string | null;
   errorMessage?: string;
+}
+
+/** Live host context-window estimate (not recoverable from JSONL alone). */
+export interface PiContextUsageSnapshot {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}
+
+/** Aggregated session stats from the live host (includes compacted history). */
+export interface PiSessionStatsSnapshot {
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolResults: number;
+  totalMessages: number;
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  cost: number;
+}
+
+/** Live skill row for Context inspect (name/description/path only). */
+export interface PiLiveSkillInfo {
+  name: string;
+  description: string;
+  filePath: string;
+}
+
+/** Live tool row for Context inspect (schema deferred). */
+export interface PiLiveToolInfo {
+  name: string;
+  description: string;
+}
+
+/** Assembled approx of what the next turn would send (not wire-identical). */
+export interface PiLiveAssembledContext {
+  systemPrompt: string;
+  messages: JsonValue;
+  toolNames: string[];
+}
+
+/** Last provider request captured via before_provider_request. */
+export interface PiLiveProviderRequest {
+  at: number;
+  payload: JsonValue;
+}
+
+/** Live-only inspect fields from an embedded PI host. */
+export interface PiLiveInspectSnapshot {
+  systemPrompt: string;
+  activeToolNames: string[];
+  contextUsage: PiContextUsageSnapshot | null;
+  sessionStats: PiSessionStatsSnapshot;
+  skills: PiLiveSkillInfo[];
+  tools: PiLiveToolInfo[];
+  /** Session context messages (AgentMessage-shaped, JSON-safe). */
+  sessionMessages: JsonValue;
+  /** convertToLlm(sessionMessages) + system + tool names. */
+  assembled: PiLiveAssembledContext;
+  /** Most recent provider wire payload; null if no request yet this host life. */
+  lastProviderRequest: PiLiveProviderRequest | null;
+}
+
+/** Result of in-file session tree navigation (`navigateTree`). */
+export interface PiNavigateTreeResult {
+  cancelled: boolean;
+  editorText?: string;
+  aborted?: boolean;
+}
+
+/** Precomputed leave-path summary waiting to be injected on the next summarize navigate. */
+export interface PiPreparedBranchSummary {
+  fromLeafId: string;
+  summary: string;
+  preparedAt: number;
+  details?: {
+    readFiles: string[];
+    modifiedFiles: string[];
+  };
 }
 
 export function isTerminalStopReason(reason: PiStopReason): reason is PiTerminalStopReason {

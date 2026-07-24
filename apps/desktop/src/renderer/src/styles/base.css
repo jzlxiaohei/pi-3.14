@@ -38,8 +38,9 @@ button:disabled {
   cursor: default;
 }
 
-/* Minimal form reset — no full normalize. Kill native chrome; focus is owned by components. */
-input,
+/* Minimal form reset — no full normalize. Kill native chrome; focus is owned by components.
+   Keep checkbox/radio native enough to stay visible/clickable (appearance:none hides them). */
+input:not([type="checkbox"]):not([type="radio"]),
 textarea {
   margin: 0;
   border: 0;
@@ -50,12 +51,28 @@ textarea {
   appearance: none;
 }
 
-input:focus,
-input:focus-visible,
+input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
 textarea:focus,
 textarea:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--action-primary);
+  cursor: pointer;
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 /* Buttons / bare focusables: ring on the control itself. */

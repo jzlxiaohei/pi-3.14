@@ -156,7 +156,14 @@ export function reduceTimelineEvent(state: TimelineState, event: PiHostEvent): T
       if (event.stopReason === "toolUse" && !event.text.trim()) {
         return closeAssistantAfterTools(state, event.thinking, event.at);
       }
-      return finishAssistantMessage(state, event.text, event.thinking, event.stopReason, event.at);
+      return finishAssistantMessage(
+        state,
+        event.text,
+        event.thinking,
+        event.stopReason,
+        event.at,
+        event.errorMessage,
+      );
     case "queue_update":
       return state;
     case "compaction":
@@ -239,6 +246,7 @@ function finishAssistantMessage(
   thinking: string | undefined,
   stopReason: PiStopReason | undefined,
   at: number,
+  errorMessage?: string,
 ): TimelineState {
   const assistant = getOrCreateAssistant(state, at);
   const current = assistant.state.items.find(
@@ -247,15 +255,28 @@ function finishAssistantMessage(
   const nextText = text || current?.text || "";
   const nextThinking = thinking?.trim() ? thinking : current?.thinking;
   const terminal = stopReason !== undefined && isTerminalStopReason(stopReason);
+  const resolvedError =
+    errorMessage?.trim() ||
+    (stopReason === "error"
+      ? assistant.state.status.errorMessage?.trim() || "Model request failed"
+      : stopReason === "aborted"
+        ? "Turn aborted"
+        : undefined);
 
-  // Drop empty terminal assistants with neither answer nor thinking.
-  if (!nextText.trim() && !nextThinking?.trim() && terminal) {
+  // Drop empty successful terminals; keep failed/aborted so the thread shows why it stopped.
+  if (
+    !nextText.trim() &&
+    !nextThinking?.trim() &&
+    terminal &&
+    stopReason !== "error" &&
+    stopReason !== "aborted"
+  ) {
     return {
       ...assistant.state,
       activeAssistantId: null,
       items: assistant.state.items.filter((item) => item.id !== assistant.id),
       status: {
-        errorMessage: stopReason === "error" ? assistant.state.status.errorMessage : null,
+        errorMessage: null,
         retryAttempt: null,
         runStatus: terminalRunStatus(stopReason),
       },
@@ -272,12 +293,13 @@ function finishAssistantMessage(
             stopReason: terminal ? stopReason : item.stopReason,
             text: nextText,
             ...(nextThinking ? { thinking: nextThinking } : {}),
+            ...(resolvedError ? { errorMessage: resolvedError } : {}),
           }
         : item,
     ),
     status: terminal
       ? {
-          errorMessage: stopReason === "error" ? assistant.state.status.errorMessage : null,
+          errorMessage: stopReason === "error" ? resolvedError ?? null : null,
           retryAttempt: null,
           runStatus: terminalRunStatus(stopReason),
         }

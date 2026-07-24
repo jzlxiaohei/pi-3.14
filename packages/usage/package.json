@@ -1,0 +1,37 @@
+{
+  "name": "@pi-3.14/usage",
+  "version": "0.1.0",
+  "description": "Provider subscription / rate-limit quota lookups and context composition estimates for PIE.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json",
+    "pretest": "pnpm build",
+    "test": "node --import tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm clean && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  }
+}

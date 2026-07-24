@@ -2,6 +2,7 @@ import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import { createMemo, createResource } from "solid-js";
+import { writeClipboardText } from "@/shared/clipboard";
 import { highlightCodeInner } from "./highlight";
 
 type MarkdownViewProps = {
@@ -34,7 +35,8 @@ export function MarkdownView(props: MarkdownViewProps) {
     const code = button.closest(".at-code-frame")?.querySelector("code")?.textContent;
     if (!code) return;
 
-    await navigator.clipboard.writeText(code);
+    const ok = await writeClipboardText(code);
+    if (!ok) return;
     button.textContent = "Copied";
     window.setTimeout(() => {
       if (button.isConnected) button.textContent = "Copy";

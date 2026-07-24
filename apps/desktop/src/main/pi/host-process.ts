@@ -17,6 +17,7 @@ import type {
   PiHostResponse,
   PiHostToolApprovalRequestMessage,
 } from "../../shared/desktop-contracts";
+import { QUESTIONNAIRE_SYSTEM_PROMPT } from "./prompts/questionnaire-system-prompt";
 
 type ParentPort = {
   on(event: "message", listener: (message: { data: unknown }) => void): void;
@@ -68,10 +69,26 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
         rejectAllApprovals("Host recreated");
         sessionAutoApprove?.reset();
         sessionAutoApprove = createSessionAutoApprove((request) => requestToolApproval(request));
+        const ignored = new Set(
+          (command.ignoredSkillNames ?? []).map((name) => name.trim()).filter(Boolean),
+        );
         host = await createEmbeddedPiHost({
           cwd: command.cwd,
           ...(command.sessionPath ? { sessionPath: command.sessionPath } : {}),
           toolApproval: sessionAutoApprove,
+          services: {
+            resourceLoaderOptions: {
+              appendSystemPrompt: [QUESTIONNAIRE_SYSTEM_PROMPT],
+              ...(ignored.size > 0
+                ? {
+                    skillsOverride: (current) => ({
+                      skills: current.skills.filter((skill) => !ignored.has(skill.name)),
+                      diagnostics: current.diagnostics,
+                    }),
+                  }
+                : {}),
+            },
+          },
         });
         const state = await host.getState();
         replyOk(command.id, state);
@@ -80,6 +97,16 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
       case "prompt": {
         const active = requireHost();
         const turn = active.prompt(command.text);
+        for await (const event of turn.events) {
+          parentPort!.postMessage({ type: "event", event });
+        }
+        const result = await turn.result;
+        replyOk(command.id, result);
+        return;
+      }
+      case "continue_turn": {
+        const active = requireHost();
+        const turn = active.continueTurn();
         for await (const event of turn.events) {
           parentPort!.postMessage({ type: "event", event });
         }
@@ -97,6 +124,33 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
         replyOk(command.id, await requireHost().getState());
         return;
       }
+      case "inspect_live": {
+        replyOk(command.id, await requireHost().inspectLive());
+        return;
+      }
+      case "navigate_tree": {
+        replyOk(
+          command.id,
+          await requireHost().navigateTree(command.entryId, {
+            summarize: command.summarize,
+            ...(command.label ? { label: command.label } : {}),
+          }),
+        );
+        return;
+      }
+      case "prepare_branch_summary": {
+        replyOk(command.id, await requireHost().prepareBranchSummary());
+        return;
+      }
+      case "get_prepared_branch_summary": {
+        replyOk(command.id, await requireHost().getPreparedBranchSummary());
+        return;
+      }
+      case "clear_prepared_branch_summary": {
+        await requireHost().clearPreparedBranchSummary();
+        replyOk(command.id, { ok: true });
+        return;
+      }
       case "list_models": {
         replyOk(command.id, await requireHost().listModels());
         return;
@@ -111,6 +165,18 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
       }
       case "set_thinking_level": {
         replyOk(command.id, await requireHost().setThinkingLevel(command.level));
+        return;
+      }
+      case "set_auto_approve": {
+        if (!sessionAutoApprove) {
+          throw new Error("PI host has not been created in the utility process");
+        }
+        sessionAutoApprove.setUnlocked(command.unlocked);
+        replyOk(command.id, { unlocked: sessionAutoApprove.unlocked });
+        return;
+      }
+      case "get_auto_approve": {
+        replyOk(command.id, { unlocked: sessionAutoApprove?.unlocked ?? false });
         return;
       }
       case "dispose": {
@@ -142,7 +208,7 @@ async function handleCommand(command: PiHostCommand): Promise<void> {
   } catch (error) {
     console.error("[pi-host] command failed", command.type, error);
     if (command.type === "tool_approval_reply") return;
-    if (command.type === "prompt") {
+    if (command.type === "prompt" || command.type === "continue_turn") {
       rejectAllApprovals("Prompt failed");
       await host?.abort().catch(() => {});
     }

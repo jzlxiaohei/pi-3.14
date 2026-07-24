@@ -1,6 +1,8 @@
 export { AgentTimeline } from "./AgentTimeline";
 export { AssistantMessage } from "./AssistantMessage";
 export { Composer } from "./Composer";
+export { ContextNote } from "./ContextNote";
+export { QuestionnaireReply } from "./QuestionnaireReply";
 export { ToolCallBlock } from "./ToolCallBlock";
 export { ToolCallGroup } from "./ToolCallGroup";
 export { UserMessage } from "./UserMessage";

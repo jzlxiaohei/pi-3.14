@@ -1,4 +1,4 @@
-import { Copy, Files, GitBranch, PanelRight, RefreshCw, Terminal } from "lucide-solid";
+import { Braces, Files, PanelRight, Terminal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { TimelineItem } from "@/features/agent-timeline";
 import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
@@ -11,6 +11,7 @@ import {
 } from "../diff-from-timeline";
 import { IconButton } from "@/shared/ui/icon-button";
 import { Tabs } from "@/shared/ui/tabs";
+import { ContextPreview } from "./inspector/context-preview";
 import { TerminalPreview } from "./inspector/terminal-preview";
 import { WorkspaceTree } from "./inspector/workspace-tree";
 
@@ -20,8 +21,10 @@ type InspectorProps = {
   onCollapse: () => void;
   onOpenReview: (path?: string | null) => void;
   onTabChange: (tab: InspectorTab) => void;
+  ready?: boolean;
   refreshToken?: number;
   tab: InspectorTab;
+  ignoredSkillNames?: string[];
 };
 
 export function Inspector(props: InspectorProps) {
@@ -66,7 +69,7 @@ export function Inspector(props: InspectorProps) {
   const changedPathSet = createMemo(() => new Set(changedPaths()));
   const branchLabel = createMemo(() => {
     const snapshot = git();
-    if (!props.cwd) return "No workspace";
+    if (!props.cwd) return null;
     if (loadingGit()) return "Reading git…";
     if (gitError()) return "Git unavailable";
     if (!snapshot?.isRepo) return "Not a git repo";
@@ -74,13 +77,7 @@ export function Inspector(props: InspectorProps) {
   });
 
   return (
-    <aside
-      class="inspector"
-      classList={{
-        "inspector--files": props.tab === "files",
-        "inspector--terminal": props.tab === "terminal",
-      }}
-    >
+    <aside class="inspector">
       <Tabs
         value={props.tab}
         onValueChange={(value) => props.onTabChange(value as InspectorTab)}
@@ -101,45 +98,50 @@ export function Inspector(props: InspectorProps) {
             badge: String(terminalLines().length),
             icon: <Terminal size={16} />,
           },
+          {
+            value: "context",
+            label: "Context",
+            icon: <Braces size={16} />,
+          },
         ]}
       />
-      <div class="branch-bar">
-        <span>
-          <GitBranch size={15} /> {branchLabel()}
-        </span>
-        <div class="branch-bar-actions">
-          <button
-            type="button"
-            aria-label="Refresh git status"
-            onClick={() => {
+      <div class="inspector-body">
+        {/* Keep Files/Terminal mounted so tab switch does not remount the tree or flash surfaces. */}
+        <div
+          class="inspector-pane"
+          data-pane="files"
+          hidden={props.tab !== "files"}
+        >
+          <WorkspaceTree
+            cwd={props.cwd}
+            changedPaths={changedPaths()}
+            mode="panel"
+            branchLabel={branchLabel()}
+            onRefreshGit={() => {
               if (props.cwd) void loadGit(props.cwd);
             }}
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (props.cwd) void navigator.clipboard.writeText(props.cwd);
+            onOpenPath={(path) => {
+              if (changedPathSet().has(path)) props.onOpenReview(path);
             }}
-          >
-            <Copy size={14} /> Copy
-          </button>
+          />
         </div>
+        <div
+          class="inspector-pane"
+          data-pane="terminal"
+          hidden={props.tab !== "terminal"}
+        >
+          <TerminalPreview lines={terminalLines()} />
+        </div>
+        <Show when={props.tab === "context"}>
+          <div class="inspector-pane" data-pane="context">
+            <ContextPreview
+              ready={Boolean(props.ready)}
+              refreshToken={props.refreshToken}
+              ignoredSkillNames={props.ignoredSkillNames}
+            />
+          </div>
+        </Show>
       </div>
-      <Show when={props.tab === "files"}>
-        <WorkspaceTree
-          cwd={props.cwd}
-          changedPaths={changedPaths()}
-          mode="panel"
-          onOpenPath={(path) => {
-            if (changedPathSet().has(path)) props.onOpenReview(path);
-          }}
-        />
-      </Show>
-      <Show when={props.tab === "terminal"}>
-        <TerminalPreview lines={terminalLines()} />
-      </Show>
     </aside>
   );
 }

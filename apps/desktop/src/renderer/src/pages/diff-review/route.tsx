@@ -37,15 +37,17 @@ export function DiffReviewPanel(props: DiffReviewPanelProps) {
   const [selectedPath, setSelectedPath] = createSignal<string | null>(props.initialPath ?? null);
   const [discardingPath, setDiscardingPath] = createSignal<string | null>(null);
   const [layout, setLayout] = createSignal<DiffLayout>("split");
-  const [reviewedPaths, setReviewedPaths] = createSignal<string[]>(loadReviewedPaths(props.cwd));
-  const [baseRef, setBaseRef] = createSignal<string | null>(loadBaseRef(props.cwd));
+  const [reviewedPaths, setReviewedPaths] = createSignal<string[]>([]);
+  const [baseRef, setBaseRef] = createSignal<string | null>(null);
 
   createEffect(() => {
     const cwd = props.cwd;
-    setReviewedPaths(loadReviewedPaths(cwd));
+    setReviewedPaths([]);
     setSelectedPath(props.initialPath ?? null);
-    setBaseRef(loadBaseRef(cwd));
-    void loadGit(cwd, loadBaseRef(cwd));
+    void window.piDesktop.preferences.getWorkspace(cwd).then((preference) => {
+      setBaseRef(preference.reviewBaseRef);
+      void loadGit(cwd, preference.reviewBaseRef);
+    });
   });
 
   const files = createMemo(() => {
@@ -54,15 +56,18 @@ export function DiffReviewPanel(props: DiffReviewPanelProps) {
   });
 
   createEffect(() => {
-    const cwd = props.cwd;
-    const paths = new Set(files().map((file) => file.path));
-    setReviewedPaths((current) => {
-      const next = current.filter((path) => paths.has(path));
-      persistReviewedPaths(cwd, next);
-      return next.length === current.length && next.every((path, i) => path === current[i])
-        ? current
-        : next;
-    });
+    const snapshot = git();
+    const resolvedBase = baseRef();
+    if (!snapshot || !resolvedBase) {
+      setReviewedPaths([]);
+      return;
+    }
+    const fingerprints = snapshot.files.flatMap((file) =>
+      file.reviewFingerprint ? [{ path: file.path, fingerprint: file.reviewFingerprint }] : [],
+    );
+    void window.piDesktop.preferences
+      .getReviewedPaths({ cwd: props.cwd, baseRef: resolvedBase, files: fingerprints })
+      .then(setReviewedPaths);
   });
 
   const selectedFile = createMemo(() => {
@@ -106,15 +111,30 @@ export function DiffReviewPanel(props: DiffReviewPanelProps) {
   }
 
   function setReviewed(path: string, reviewed: boolean): void {
-    setReviewedPaths((current) => {
-      const next = reviewed
+    setReviewedPaths((current) =>
+      reviewed
         ? current.includes(path)
           ? current
           : [...current, path]
-        : current.filter((item) => item !== path);
-      persistReviewedPaths(props.cwd, next);
-      return next;
-    });
+        : current.filter((item) => item !== path),
+    );
+    const resolvedBase = baseRef();
+    if (!resolvedBase) return;
+    const file = git()?.files.find((item) => item.path === path);
+    if (reviewed && file?.reviewFingerprint) {
+      void window.piDesktop.preferences.setReviewedFile({
+        cwd: props.cwd,
+        baseRef: resolvedBase,
+        path,
+        fingerprint: file.reviewFingerprint,
+      });
+    } else {
+      void window.piDesktop.preferences.clearReviewedFile({
+        cwd: props.cwd,
+        baseRef: resolvedBase,
+        path,
+      });
+    }
   }
 
   function markReviewedAndAdvance(path: string): void {
@@ -136,7 +156,9 @@ export function DiffReviewPanel(props: DiffReviewPanelProps) {
       const snapshot = await window.piDesktop.workspace.git({ cwd, baseRef: nextBase });
       setGit(snapshot);
       setBaseRef(snapshot.baseRef);
-      persistBaseRef(cwd, snapshot.baseRef);
+      void window.piDesktop.preferences.updateWorkspace(cwd, {
+        reviewBaseRef: snapshot.baseRef,
+      });
     } catch (err) {
       setGit(null);
       setError(err instanceof Error ? err.message : String(err));
@@ -148,7 +170,6 @@ export function DiffReviewPanel(props: DiffReviewPanelProps) {
   async function selectBase(next: string): Promise<void> {
     if (next === baseRef()) return;
     setBaseRef(next);
-    persistBaseRef(props.cwd, next);
     await loadGit(props.cwd, next);
   }
 
@@ -164,12 +185,8 @@ export function DiffReviewPanel(props: DiffReviewPanelProps) {
         return;
       }
       setReviewed(path, false);
-      const snapshot = await window.piDesktop.workspace.git({
-        cwd: props.cwd,
-        baseRef: baseRef(),
-      });
-      setGit(snapshot);
-      const nextFiles = mergeReviewDiffFiles([], diffFilesFromGitPatch(snapshot.patch), snapshot.files);
+      await loadGit(props.cwd, baseRef());
+      const nextFiles = files();
       setSelectedPath(nextFiles.find((file) => file.path !== path)?.path ?? nextFiles[0]?.path ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -597,27 +614,6 @@ function compareTitle(snapshot: WorkspaceGitSnapshot | null): string {
   return `Working tree on ${source} compared to ${target}`;
 }
 
-function baseStorageKey(cwd: string): string {
-  return `pie.review.base:${cwd}`;
-}
-
-/** null = auto-pick default branch on next load. */
-function loadBaseRef(cwd: string): string | null {
-  try {
-    return sessionStorage.getItem(baseStorageKey(cwd));
-  } catch {
-    return null;
-  }
-}
-
-function persistBaseRef(cwd: string, baseRef: string): void {
-  try {
-    sessionStorage.setItem(baseStorageKey(cwd), baseRef);
-  } catch {
-    // ignore quota / private mode
-  }
-}
-
 function statusLetter(status: DiffFile["status"]): string {
   switch (status) {
     case "added":
@@ -642,28 +638,4 @@ function fileDir(path: string): string | null {
   const idx = path.lastIndexOf("/");
   if (idx <= 0) return null;
   return path.slice(0, idx);
-}
-
-function reviewedStorageKey(cwd: string): string {
-  return `pie.review.reviewed:${cwd}`;
-}
-
-function loadReviewedPaths(cwd: string | null): string[] {
-  if (!cwd) return [];
-  try {
-    const raw = sessionStorage.getItem(reviewedStorageKey(cwd));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistReviewedPaths(cwd: string, paths: string[]): void {
-  try {
-    sessionStorage.setItem(reviewedStorageKey(cwd), JSON.stringify(paths));
-  } catch {
-    // Ignore quota / private-mode failures; review progress stays in-memory.
-  }
 }

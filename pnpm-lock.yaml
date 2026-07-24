@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@atlaskit/pragmatic-drag-and-drop':
+        specifier: ^2.0.1
+        version: 2.0.1
       dompurify:
         specifier: ^3.4.12
         version: 3.4.12
@@ -33,6 +36,12 @@ importers:
       '@ark-ui/solid':
         specifier: ^5.37.1
         version: 5.37.1(solid-js@1.9.14)
+      '@atlaskit/pragmatic-drag-and-drop':
+        specifier: ^2.0.1
+        version: 2.0.1
+      '@dagrejs/dagre':
+        specifier: ^3.0.0
+        version: 3.0.0
       '@pi-3.14/model':
         specifier: workspace:^
         version: link:../../packages/model
@@ -42,6 +51,9 @@ importers:
       '@pi-3.14/session':
         specifier: workspace:^
         version: link:../../packages/session
+      '@pi-3.14/usage':
+        specifier: workspace:^
+        version: link:../../packages/usage
       '@solidjs/router':
         specifier: ^0.15.3
         version: 0.15.4(solid-js@1.9.14)
@@ -140,6 +152,12 @@ importers:
         specifier: ^26.1.1
         version: 26.1.1
 
+  packages/usage:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
+
 packages:
 
   '@anthropic-ai/sdk@0.91.1':
@@ -155,6 +173,9 @@ packages:
     resolution: {integrity: sha512-0/X+mcQyFbbfICmd4LMUR/bR45f1WOmlXFzYCBNU8AQLidCu8Sd6UFdjSOuXwjgenkYRYHOqxXW2vvzNQxg7XQ==}
     peerDependencies:
       solid-js: '>=1.6.0'
+
+  '@atlaskit/pragmatic-drag-and-drop@2.0.1':
+    resolution: {integrity: sha512-5iSbCveKuWYh0HijDxfSsYKD2VE0UPObI9jO1pqq+RBk9LzaoOYeKyW0Fobv/6db8HAPcyT3vhRy8bmk5TMcMw==}
 
   '@aws-crypto/sha256-browser@5.2.0':
     resolution: {integrity: sha512-AXfN/lGotSQwu6HNcEsIASo7kWXZ5HYWvfOmSNKDsEqC4OashTp8alTmaz+F7TC2L083SFv5RdB+qU3Vs1kZqw==}
@@ -343,6 +364,12 @@ packages:
   '@babel/types@7.29.7':
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
+
+  '@dagrejs/dagre@3.0.0':
+    resolution: {integrity: sha512-ZzhnTy1rfuoew9Ez3EIw4L2znPGnYYhfn8vc9c4oB8iw6QAsszbiU0vRhlxWPFnmmNSFAkrYeF1PhM5m4lAN0Q==}
+
+  '@dagrejs/graphlib@4.0.1':
+    resolution: {integrity: sha512-IvcV6FduIIAmLwnH+yun+QtV36SC7mERqa86aClNqmMN09WhmPPYU8ckHrZBozErf+UvHPWOTJYaGYiIcs0DgA==}
 
   '@earendil-works/pi-agent-core@0.80.10':
     resolution: {integrity: sha512-nwnOR3SuLYGRFfyQm8ri4Nj5VGVAvAM9GuqQd3u7BUQj0d6hmD2F8w7OHAAjThE3CuySIdM+v8E22QJG6/RfCg==}
@@ -1513,6 +1540,9 @@ packages:
   bignumber.js@9.3.1:
     resolution: {integrity: sha512-Ko0uX15oIUS7wJ3Rb30Fs6SkVbLmPBAKdlm7q9+ak9bbIeFf0MwuBsQV6z7+X768/cHsfg+WlysDWJcmthjsjQ==}
 
+  bind-event-listener@3.0.0:
+    resolution: {integrity: sha512-PJvH288AWQhKs2v9zyfYdPzlPqf5bXbGMmhmUIY9x4dAUGIWgomO771oBQNwJnMQSnUIXhKu6sgzpBRXTlvb8Q==}
+
   bluebird@3.7.2:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
 
@@ -2427,6 +2457,9 @@ packages:
     resolution: {integrity: sha512-WuyALRjWPDGtt/wzJiadO5AXY+8hZ80hVpe6MyivgraREW751X3SbhRvG3eLKOYN+8VEvqLcf3wdnt44Z4S4SA==}
     engines: {node: '>=10'}
 
+  raf-schd@4.0.3:
+    resolution: {integrity: sha512-tQkJl2GRWh83ui2DiPTJz9wEiMN20syf+5oKfB03yYP7ioZcJwsIK8FjrtLwH1m7C7e+Tt2yYBlrOpdT+dyeIQ==}
+
   read-binary-file-arch@1.0.6:
     resolution: {integrity: sha512-BNg9EN3DD3GsDXX7Aa8O4p92sryjkmzYYgmgTAc6CA4uGLEDzFfxOxugu21akOxpcXHiEgsYkC6nPsQvLLLmEg==}
     hasBin: true
@@ -2943,6 +2976,12 @@ snapshots:
       '@zag-js/utils': 1.41.2
       solid-js: 1.9.14
 
+  '@atlaskit/pragmatic-drag-and-drop@2.0.1':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      bind-event-listener: 3.0.0
+      raf-schd: 4.0.3
+
   '@aws-crypto/sha256-browser@5.2.0':
     dependencies:
       '@aws-crypto/sha256-js': 5.2.0
@@ -3274,6 +3313,12 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@dagrejs/dagre@3.0.0':
+    dependencies:
+      '@dagrejs/graphlib': 4.0.1
+
+  '@dagrejs/graphlib@4.0.1': {}
 
   '@earendil-works/pi-agent-core@0.80.10(ws@8.21.1)(zod@4.4.3)':
     dependencies:
@@ -4708,6 +4753,8 @@ snapshots:
 
   bignumber.js@9.3.1: {}
 
+  bind-event-listener@3.0.0: {}
+
   bluebird@3.7.2: {}
 
   boolean@3.2.0:
@@ -5731,6 +5778,8 @@ snapshots:
   pvutils@1.1.5: {}
 
   quick-lru@5.1.1: {}
+
+  raf-schd@4.0.3: {}
 
   read-binary-file-arch@1.0.6:
     dependencies:

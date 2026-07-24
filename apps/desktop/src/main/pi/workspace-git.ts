@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { lstat } from "node:fs/promises";
 import { shell } from "electron";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -62,6 +64,10 @@ export async function readWorkspaceGit(
   ]);
 
   const files = expandUntrackedEntries(statusFiles, untrackedPaths);
+  const baseOid = await git(cwd, ["rev-parse", `${baseRef}^{commit}`]).catch(() => baseRef);
+  const filesWithFingerprints = await mapWithConcurrency(files, 8, (file) =>
+    withReviewFingerprint(cwd, baseOid.trim(), file),
+  );
   const untrackedPatch = await buildUntrackedPatch(cwd, untrackedPaths);
   const patch = joinPatches(trackedPatch, untrackedPatch);
   const truncated =
@@ -73,7 +79,7 @@ export async function readWorkspaceGit(
     upstream: upstreamRef,
     baseRef,
     bases,
-    files,
+    files: filesWithFingerprints,
     patch: truncated.trim() ? truncated : null,
   };
 }
@@ -277,9 +283,11 @@ function parsePorcelain(output: string): WorkspaceGitFile[] {
     if (line.length < 3) continue;
     const code = line.slice(0, 2);
     const rest = line.slice(3);
-    const filePath = rest.includes(" -> ") ? rest.split(" -> ").at(-1)! : rest;
+    const rename = rest.includes(" -> ") ? rest.split(" -> ") : null;
+    const filePath = rename?.at(-1) ?? rest;
     files.push({
       path: filePath.replaceAll("\\", "/"),
+      ...(rename?.[0] ? { oldPath: rename[0].replaceAll("\\", "/") } : {}),
       status: mapStatus(code),
     });
   }
@@ -296,6 +304,7 @@ function parseNameStatus(output: string): WorkspaceGitFile[] {
     if (!filePath) continue;
     files.push({
       path: filePath,
+      ...(parts.length >= 3 && parts[1] ? { oldPath: parts[1].replaceAll("\\", "/") } : {}),
       status: mapNameStatus(code),
     });
   }
@@ -316,6 +325,47 @@ function mapStatus(code: string): WorkspaceGitFile["status"] {
   if (code.includes("A")) return "added";
   if (code.includes("R")) return "renamed";
   return "modified";
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  map: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const output = new Array<R>(values.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < values.length) {
+      const index = cursor++;
+      output[index] = await map(values[index]!);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, () => worker()),
+  );
+  return output;
+}
+
+async function withReviewFingerprint(
+  cwd: string,
+  baseOid: string,
+  file: WorkspaceGitFile,
+): Promise<WorkspaceGitFile> {
+  const blob =
+    file.status === "deleted"
+      ? "deleted"
+      : (await git(cwd, ["hash-object", "--no-filters", "--", file.path]).catch(() => "missing"))
+          .trim();
+  const mode = await lstat(path.resolve(cwd, file.path))
+    .then((entry) => String(entry.mode & 0o111))
+    .catch(() => "missing");
+  const reviewFingerprint = createHash("sha256")
+    .update(
+      [baseOid, file.status, file.oldPath ?? "", file.path, blob, mode].join("\0"),
+      "utf8",
+    )
+    .digest("hex");
+  return { ...file, reviewFingerprint };
 }
 
 function normalizeRelativePath(value: string): string | null {

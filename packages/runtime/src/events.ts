@@ -46,6 +46,11 @@ export function messageStopReason(message: unknown): PiStopReason | undefined {
     : undefined;
 }
 
+export function messageErrorMessage(message: unknown): string | undefined {
+  const value = record(message).errorMessage;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 export function projectPiEvent(event: unknown, at = Date.now()): PiHostEvent | undefined {
   const source = record(event);
   switch (source.type) {
@@ -91,6 +96,7 @@ export function projectPiEvent(event: unknown, at = Date.now()): PiHostEvent | u
       const role = record(message).role;
       const stopReason = messageStopReason(message);
       const thinking = messageThinking(message);
+      const errorMessage = messageErrorMessage(message);
       return {
         type: "message_end",
         at,
@@ -98,6 +104,7 @@ export function projectPiEvent(event: unknown, at = Date.now()): PiHostEvent | u
         text: messageText(message),
         ...(thinking ? { thinking } : {}),
         ...(stopReason ? { stopReason } : {}),
+        ...(errorMessage ? { errorMessage } : {}),
       };
     }
     case "queue_update":

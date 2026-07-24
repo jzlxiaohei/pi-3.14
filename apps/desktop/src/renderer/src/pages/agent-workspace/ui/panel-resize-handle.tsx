@@ -3,6 +3,7 @@ type PanelResizeHandleProps = {
   max: number;
   min: number;
   onChange: (width: number) => void;
+  onCommit?: (width: number) => void;
   /** left = task sidebar (drag right grows); right = inspector (drag left grows). */
   side: "left" | "right";
   value: number;
@@ -18,11 +19,13 @@ export function PanelResizeHandle(props: PanelResizeHandleProps) {
     handle.setPointerCapture(event.pointerId);
     handle.dataset.dragging = "true";
     document.body.dataset.panelResizing = "true";
+    let latestWidth = startWidth;
 
     function onPointerMove(move: PointerEvent) {
       const delta = move.clientX - startX;
       const next = props.side === "left" ? startWidth + delta : startWidth - delta;
-      props.onChange(Math.round(Math.min(props.max, Math.max(props.min, next))));
+      latestWidth = Math.round(Math.min(props.max, Math.max(props.min, next)));
+      props.onChange(latestWidth);
     }
 
     function onPointerUp(up: PointerEvent) {
@@ -32,6 +35,7 @@ export function PanelResizeHandle(props: PanelResizeHandleProps) {
       handle.removeEventListener("pointermove", onPointerMove);
       handle.removeEventListener("pointerup", onPointerUp);
       handle.removeEventListener("pointercancel", onPointerUp);
+      props.onCommit?.(latestWidth);
     }
 
     handle.addEventListener("pointermove", onPointerMove);

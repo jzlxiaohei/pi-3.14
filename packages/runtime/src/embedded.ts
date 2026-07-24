@@ -1,7 +1,12 @@
 import type {
+  JsonValue,
   PiHostEvent,
   PiHostState,
+  PiLiveInspectSnapshot,
+  PiLiveProviderRequest,
   PiModelOption,
+  PiNavigateTreeResult,
+  PiPreparedBranchSummary,
   PiStopReason,
   PiThinkingLevel,
   PiTurnResult,
@@ -14,9 +19,11 @@ import {
   type CreateAgentSessionRuntimeFactory,
   type CreateAgentSessionServicesOptions,
   SessionManager,
+  convertToLlm,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  generateBranchSummary,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { AsyncQueue } from "./async-queue.js";
@@ -33,7 +40,6 @@ import { messageStopReason, messageText, projectPiEvent } from "./events.js";
 import { repairOrphanedToolCalls } from "./repair-orphaned-tools.js";
 import {
   raceApproval,
-  toolNeedsApproval,
   type PiToolApprovalHandler,
 } from "./tool-approval.js";
 
@@ -42,10 +48,15 @@ export type {
   PiToolApprovalHandler,
   PiToolApprovalRequest,
   SessionAutoApprove,
+  ToolApprovalKind,
+  ToolApprovalVerdict,
 } from "./tool-approval.js";
 export {
+  classifyBashCommand,
+  classifyToolApproval,
   createSessionAutoApprove,
   raceApproval,
+  splitBashSegments,
   toolNeedsApproval,
 } from "./tool-approval.js";
 export { repairOrphanedToolCalls } from "./repair-orphaned-tools.js";
@@ -67,11 +78,20 @@ export interface EmbeddedPiHostOptions {
    */
   createRuntime?: CreateAgentSessionRuntimeFactory;
   /**
-   * Gate write/destructive tools. Fail closed when the handler denies or throws.
-   * Read-like tools are auto-approved.
+   * Gate tool calls. Prefer wrapping with `createSessionAutoApprove` so
+   * allow/ask/deny policy + session unlock live in one place. Fail closed when
+   * the handler denies or throws.
    */
   toolApproval?: PiToolApprovalHandler;
 }
+
+type WireCaptureStore = {
+  last: PiLiveProviderRequest | null;
+};
+
+type PreparedSummaryStore = {
+  pending: PiPreparedBranchSummary | null;
+};
 
 interface ActiveTurn {
   unsubscribe: () => void;
@@ -89,53 +109,27 @@ export class EmbeddedPiHost implements PiHost {
   private active?: ActiveTurn;
   private disposed = false;
 
-  constructor(readonly runtime: AgentSessionRuntime) {}
+  constructor(
+    readonly runtime: AgentSessionRuntime,
+    private readonly wireCapture: WireCaptureStore = { last: null },
+    private readonly preparedSummary: PreparedSummaryStore = { pending: null },
+  ) {}
 
   get session(): AgentSession {
     return this.runtime.session;
   }
 
   prompt(input: PiPromptInput | string): PiTurnHandle {
-    this.assertAvailable();
-    if (this.active) throw new Error("A PI turn is already running");
+    return this.beginTurn((session) => session.prompt(promptText(input)));
+  }
 
-    const events = new AsyncQueue<PiHostEvent>();
-    const session = this.session;
-    let lastText = "";
-    let streamText = "";
-    let latestNonEmptyText = "";
-    let lastStopReason: PiStopReason | undefined;
-    const active: ActiveTurn = {
-      unsubscribe: session.subscribe((event) => {
-        const projected = projectPiEvent(event);
-        if (projected) events.push(projected);
-        if (
-          event.type === "message_start" &&
-          "role" in event.message &&
-          event.message.role === "assistant"
-        ) {
-          streamText = "";
-        }
-        if (projected?.type === "text_delta") {
-          streamText += projected.text;
-          if (streamText) latestNonEmptyText = streamText;
-        }
-        if (event.type !== "message_end") return;
-        const reason = messageStopReason(event.message);
-        if (!reason) return;
-        lastStopReason = reason;
-        if (reason !== "toolUse") {
-          lastText = messageText(event.message) || streamText || latestNonEmptyText;
-        }
-      }),
-    };
-    this.active = active;
-
-    const result = this.runPrompt(session, promptText(input), active, events, () => ({
-      text: lastText,
-      stopReason: lastStopReason,
-    }));
-    return { events, result };
+  continueTurn(): PiTurnHandle {
+    return this.beginTurn(async (session) => {
+      // Ensure agent transcript matches the session leaf before continuing.
+      const context = session.sessionManager.buildSessionContext();
+      session.agent.state.messages = context.messages;
+      await session.agent.continue();
+    });
   }
 
   async steer(input: PiPromptInput | string): Promise<void> {
@@ -158,6 +152,7 @@ export class EmbeddedPiHost implements PiHost {
     return {
       sessionId: session.sessionId,
       sessionPath: session.sessionFile ?? null,
+      leafEntryId: session.sessionManager.getLeafId(),
       isStreaming: session.isStreaming,
       isCompacting: session.isCompacting,
       model: session.model ? { provider: session.model.provider, id: session.model.id } : null,
@@ -213,6 +208,150 @@ export class EmbeddedPiHost implements PiHost {
     };
   }
 
+  async inspectLive(): Promise<PiLiveInspectSnapshot> {
+    this.assertAvailable();
+    const session = this.session;
+    const stats = session.getSessionStats();
+    const contextUsage = session.getContextUsage();
+    const sessionContext = session.sessionManager.buildSessionContext();
+    const sessionMessages = toJsonValue(sessionContext.messages);
+    const assembledMessages = toJsonValue(convertToLlm(sessionContext.messages));
+    const skills = session.resourceLoader.getSkills().skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      filePath: skill.filePath,
+    }));
+    const tools = session.getAllTools().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+    }));
+    const toolNames = session.getActiveToolNames();
+    return {
+      systemPrompt: session.systemPrompt,
+      activeToolNames: toolNames,
+      contextUsage: contextUsage
+        ? {
+            tokens: contextUsage.tokens,
+            contextWindow: contextUsage.contextWindow,
+            percent: contextUsage.percent,
+          }
+        : null,
+      sessionStats: {
+        userMessages: stats.userMessages,
+        assistantMessages: stats.assistantMessages,
+        toolCalls: stats.toolCalls,
+        toolResults: stats.toolResults,
+        totalMessages: stats.totalMessages,
+        tokens: { ...stats.tokens },
+        cost: stats.cost,
+      },
+      skills,
+      tools,
+      sessionMessages,
+      assembled: {
+        systemPrompt: session.systemPrompt,
+        messages: assembledMessages,
+        toolNames,
+      },
+      lastProviderRequest: this.wireCapture.last,
+    };
+  }
+
+  async navigateTree(
+    entryId: string,
+    options?: { summarize?: boolean; label?: string },
+  ): Promise<PiNavigateTreeResult> {
+    this.assertAvailable();
+    if (this.active) {
+      await this.session.abort().catch(() => {});
+      for (let attempt = 0; attempt < 100 && this.active; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    this.assertReplaceable();
+    const fromLeafId = this.session.sessionManager.getLeafId();
+    const summarize = options?.summarize ?? false;
+    const result = await this.session.navigateTree(entryId, {
+      summarize,
+      ...(options?.label ? { label: options.label } : {}),
+    });
+    if (
+      !result.cancelled &&
+      summarize &&
+      this.preparedSummary.pending &&
+      this.preparedSummary.pending.fromLeafId === fromLeafId
+    ) {
+      this.preparedSummary.pending = null;
+    }
+    return {
+      cancelled: result.cancelled,
+      ...(result.editorText !== undefined ? { editorText: result.editorText } : {}),
+      ...(result.aborted !== undefined ? { aborted: result.aborted } : {}),
+    };
+  }
+
+  async prepareBranchSummary(): Promise<PiPreparedBranchSummary> {
+    this.assertAvailable();
+    if (this.active) {
+      await this.session.abort().catch(() => {});
+      for (let attempt = 0; attempt < 100 && this.active; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    this.assertReplaceable();
+
+    const session = this.session;
+    const leafId = session.sessionManager.getLeafId();
+    if (!leafId) throw new Error("No leaf to summarize");
+    const model = session.model;
+    if (!model) throw new Error("No model available for summarization");
+
+    const entries = collectEntriesForPrepare(session.sessionManager, leafId);
+    if (entries.length === 0) throw new Error("Nothing to summarize on the current path");
+
+    const auth = await getSummarizationAuth(session, model);
+    const reserveTokens = session.settingsManager.getBranchSummarySettings().reserveTokens;
+    const controller = new AbortController();
+    const result = await generateBranchSummary(entries, {
+      model,
+      apiKey: auth.apiKey,
+      headers: auth.headers,
+      env: auth.env,
+      signal: controller.signal,
+      reserveTokens,
+      streamFn: session.agent.streamFn,
+    });
+    if (result.aborted) throw new Error("Branch summary aborted");
+    if (result.error) throw new Error(result.error);
+    if (!result.summary?.trim()) throw new Error("Empty branch summary");
+
+    const prepared: PiPreparedBranchSummary = {
+      fromLeafId: leafId,
+      summary: result.summary,
+      preparedAt: Date.now(),
+      details: {
+        readFiles: result.readFiles ?? [],
+        modifiedFiles: result.modifiedFiles ?? [],
+      },
+    };
+    this.preparedSummary.pending = prepared;
+    return prepared;
+  }
+
+  async getPreparedBranchSummary(): Promise<PiPreparedBranchSummary | null> {
+    this.assertAvailable();
+    const pending = this.preparedSummary.pending;
+    if (!pending) return null;
+    const leafId = this.session.sessionManager.getLeafId();
+    if (pending.fromLeafId !== leafId) return null;
+    return pending;
+  }
+
+  async clearPreparedBranchSummary(): Promise<void> {
+    this.assertAvailable();
+    this.preparedSummary.pending = null;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -222,16 +361,61 @@ export class EmbeddedPiHost implements PiHost {
     await this.runtime.dispose();
   }
 
-  private async runPrompt(
+  private beginTurn(
+    run: (session: AgentSession) => Promise<void>,
+  ): PiTurnHandle {
+    this.assertAvailable();
+    if (this.active) throw new Error("A PI turn is already running");
+
+    const events = new AsyncQueue<PiHostEvent>();
+    const session = this.session;
+    let lastText = "";
+    let streamText = "";
+    let latestNonEmptyText = "";
+    let lastStopReason: PiStopReason | undefined;
+    const active: ActiveTurn = {
+      unsubscribe: session.subscribe((event) => {
+        const projected = projectPiEvent(event);
+        if (projected) events.push(projected);
+        if (
+          event.type === "message_start" &&
+          "role" in event.message &&
+          event.message.role === "assistant"
+        ) {
+          streamText = "";
+        }
+        if (projected?.type === "text_delta") {
+          streamText += projected.text;
+          if (streamText) latestNonEmptyText = streamText;
+        }
+        if (event.type !== "message_end") return;
+        const reason = messageStopReason(event.message);
+        if (!reason) return;
+        lastStopReason = reason;
+        if (reason !== "toolUse") {
+          lastText = messageText(event.message) || streamText || latestNonEmptyText;
+        }
+      }),
+    };
+    this.active = active;
+
+    const result = this.finishTurn(session, active, events, run, () => ({
+      text: lastText,
+      stopReason: lastStopReason,
+    }));
+    return { events, result };
+  }
+
+  private async finishTurn(
     session: AgentSession,
-    text: string,
     active: ActiveTurn,
     events: AsyncQueue<PiHostEvent>,
+    run: (session: AgentSession) => Promise<void>,
     readObserved: () => { text: string; stopReason?: PiStopReason },
   ): Promise<PiTurnResult> {
     let thrown: unknown;
     try {
-      await session.prompt(text);
+      await run(session);
     } catch (error) {
       thrown = error;
     } finally {
@@ -274,6 +458,9 @@ export async function createEmbeddedPiHost(
 ): Promise<EmbeddedPiHost> {
   const cwd = options.cwd ?? process.cwd();
   const agentDir = options.agentDir ?? getAgentDir();
+  const wireCapture: WireCaptureStore = { last: null };
+  const preparedSummary: PreparedSummaryStore = { pending: null };
+  const priorFactories = options.services?.resourceLoaderOptions?.extensionFactories ?? [];
   const createRuntime: CreateAgentSessionRuntimeFactory =
     options.createRuntime ??
     (async ({ cwd: runtimeCwd, agentDir: runtimeAgentDir, sessionManager, sessionStartEvent }) => {
@@ -281,6 +468,39 @@ export async function createEmbeddedPiHost(
         ...options.services,
         cwd: runtimeCwd,
         agentDir: runtimeAgentDir,
+        resourceLoaderOptions: {
+          ...(options.services?.resourceLoaderOptions ?? {}),
+          extensionFactories: [
+            ...priorFactories,
+            {
+              name: "pie-wire-capture",
+              factory: (pi) => {
+                pi.on("before_provider_request", (event) => {
+                  wireCapture.last = {
+                    at: Date.now(),
+                    payload: toJsonValue(event.payload) as JsonValue,
+                  };
+                });
+              },
+            },
+            {
+              name: "pie-prepared-branch-summary",
+              factory: (pi) => {
+                pi.on("session_before_tree", (event) => {
+                  const pending = preparedSummary.pending;
+                  if (!event.preparation.userWantsSummary || !pending) return;
+                  if (pending.fromLeafId !== event.preparation.oldLeafId) return;
+                  return {
+                    summary: {
+                      summary: pending.summary,
+                      details: pending.details ?? { readFiles: [], modifiedFiles: [] },
+                    },
+                  };
+                });
+              },
+            },
+          ],
+        },
       });
       return {
         ...(await createAgentSessionFromServices({
@@ -304,11 +524,48 @@ export async function createEmbeddedPiHost(
     agentDir,
     sessionManager,
   });
-  const host = new EmbeddedPiHost(runtime);
+  const host = new EmbeddedPiHost(runtime, wireCapture, preparedSummary);
   if (options.toolApproval) {
     installToolApprovalGate(host.session, options.toolApproval);
   }
   return host;
+}
+
+/** Summarize from nearest fork child (or path root) to the current leaf. */
+function collectEntriesForPrepare(sessionManager: SessionManager, leafId: string) {
+  const path = sessionManager.getBranch(leafId);
+  let cutIndex = 0;
+  for (let i = path.length - 1; i >= 1; i -= 1) {
+    const entry = path[i]!;
+    const parentId = entry.parentId;
+    if (parentId == null) continue;
+    if (sessionManager.getChildren(parentId).length > 1) {
+      cutIndex = i;
+      break;
+    }
+  }
+  return path.slice(cutIndex);
+}
+
+async function getSummarizationAuth(
+  session: AgentSession,
+  model: NonNullable<AgentSession["model"]>,
+): Promise<{
+  apiKey?: string;
+  headers?: Record<string, string>;
+  env?: Record<string, string>;
+}> {
+  const withAuth = session as unknown as {
+    _getSummarizationRequestAuth?: (model: NonNullable<AgentSession["model"]>) => Promise<{
+      apiKey?: string;
+      headers?: Record<string, string>;
+      env?: Record<string, string>;
+    }>;
+  };
+  if (typeof withAuth._getSummarizationRequestAuth === "function") {
+    return withAuth._getSummarizationRequestAuth(model);
+  }
+  return {};
 }
 
 function installToolApprovalGate(session: AgentSession, approve: PiToolApprovalHandler): void {
@@ -325,11 +582,11 @@ function installToolApprovalGate(session: AgentSession, approve: PiToolApprovalH
   agent.beforeToolCall = async (ctx, signal) => {
     const upstream = prior ? await prior(ctx, signal) : undefined;
     if (upstream?.block) return upstream;
-    if (!toolNeedsApproval(ctx.toolCall.name)) return upstream;
     if (signal?.aborted) {
       return { block: true, reason: "Aborted" };
     }
     try {
+      // Policy (allow/ask/deny + session unlock) lives in the approval handler.
       const decision = await raceApproval(
         approve,
         {

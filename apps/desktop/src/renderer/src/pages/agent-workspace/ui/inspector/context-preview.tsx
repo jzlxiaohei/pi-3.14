@@ -7,7 +7,11 @@ import {
 import { Braces, Copy, RefreshCw } from "lucide-solid";
 import { For, Show, createEffect, createMemo, createSignal, untrack } from "solid-js";
 import type { PiLiveSkillInfo } from "@pi-3.14/model";
-import type { PiSessionInspectResult } from "../../../../../../shared/desktop-contracts";
+import type { Agent, PiSessionInspectResult } from "../../../../../../shared/desktop-contracts";
+import {
+  isRolePromptUnset,
+  rolePromptEditorText,
+} from "../../../../../../shared/pi-default-role-prompt";
 import { writeClipboardText } from "@/shared/clipboard";
 import { Collapsible } from "@/shared/ui/collapsible";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -16,8 +20,10 @@ import { notifySuccess } from "@/shared/ui/toast";
 type ContextPreviewProps = {
   refreshToken?: number;
   ready: boolean;
-  /** Skill names ignored for the active task (not in live prompt). */
+  /** Skill names ignored for the active Agent (not in live prompt). */
   ignoredSkillNames?: string[];
+  /** Active Agent — Role Prompt shown read-only (edit in chat gutter). */
+  agent?: Agent | null;
 };
 
 type ContextPane = "request" | "response";
@@ -48,6 +54,9 @@ export function ContextPreview(props: ContextPreviewProps) {
     assembled: false,
     wire: false,
   });
+
+  const roleIsUnset = createMemo(() => isRolePromptUnset(props.agent?.systemPrompt));
+  const rolePromptDisplay = createMemo(() => rolePromptEditorText(props.agent?.systemPrompt));
 
   createEffect(() => {
     props.refreshToken;
@@ -385,6 +394,46 @@ export function ContextPreview(props: ContextPreviewProps) {
             </div>
 
             <Show when={pane() === "request"}>
+              <section class="context-preview__block role-prompt-readonly">
+                <div class="role-prompt-editor__head">
+                  <h3>Role Prompt</h3>
+                  <Show
+                    when={roleIsUnset()}
+                    fallback={<span class="role-prompt-badge">自定义</span>}
+                  >
+                    <span class="role-prompt-badge role-prompt-badge--default">未设置</span>
+                  </Show>
+                </div>
+                <p class="context-preview__muted">
+                  只读。编辑在对话右侧面板。
+                  <Show when={roleIsUnset()}>
+                    {" "}
+                    用户未设置，以下为<strong>默认填充</strong>的 PI coding base（tools /
+                    guidelines / docs）。问卷协议等 product append 见下方，不在 Role Prompt 内。
+                  </Show>
+                </p>
+                <Show
+                  when={props.agent}
+                  fallback={<p class="context-preview__muted">无 Active Agent。</p>}
+                >
+                  <pre class="context-preview__pre role-prompt-readonly__pre">
+                    {rolePromptDisplay()}
+                  </pre>
+                </Show>
+              </section>
+
+              <section class="context-preview__block">
+                <h3>Product appends</h3>
+                <ul class="context-preview__list">
+                  <li>
+                    <strong>Questionnaire protocol</strong>
+                    <span class="context-preview__muted">
+                      App-owned · injected on every bind · not part of Role Prompt editor
+                    </span>
+                  </li>
+                </ul>
+              </section>
+
               <Show when={composition()}>
                 {(comp) => (
                   <section class="context-preview__block">
@@ -422,14 +471,15 @@ export function ContextPreview(props: ContextPreviewProps) {
               <section class="context-preview__block">
                 <Collapsible
                   open={open().prompt}
-                  title="System prompt"
+                  title="Live system prompt"
                   onOpenChange={() => toggle("prompt")}
                 >
                   <pre class="context-preview__pre">
                     {live()?.systemPrompt || "(unavailable)"}
                   </pre>
                   <p class="context-preview__muted">
-                    Live host only — JSONL cannot restore historical system prompts
+                    Assembled after role base + product appends + project context + skills + cwd.
+                    Live host only — not historical from JSONL
                     {context()?.recoverability.unavailableFromJsonl.length
                       ? ` (${context()!.recoverability.unavailableFromJsonl.join(", ")})`
                       : ""}
@@ -453,7 +503,7 @@ export function ContextPreview(props: ContextPreviewProps) {
                   onOpenChange={() => toggle("skills")}
                 >
                   <p class="context-preview__muted">
-                    Read-only view. Configure per-task skill filtering from the chat composer.
+                    Read-only view. Configure per-Agent skill filtering from the chat composer.
                   </p>
                   <Show
                     when={activeSkills().length > 0}
@@ -480,7 +530,7 @@ export function ContextPreview(props: ContextPreviewProps) {
                     </ul>
                   </Show>
                   <Show when={ignoredSkillRows().length > 0}>
-                    <h4 class="context-preview__subhead">Ignored for this task</h4>
+                    <h4 class="context-preview__subhead">Ignored for this Agent</h4>
                     <ul class="context-preview__list">
                       <For each={ignoredSkillRows()}>
                         {(skill) => (

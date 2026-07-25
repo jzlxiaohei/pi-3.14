@@ -1,7 +1,7 @@
 import { Braces, Files, PanelRight, Terminal } from "lucide-solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { TimelineItem } from "@/features/agent-timeline";
-import type { WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
+import type { Agent, WorkspaceGitSnapshot } from "../../../../../shared/desktop-contracts";
 import type { InspectorTab } from "../model";
 import {
   diffFilesFromGitPatch,
@@ -25,6 +25,8 @@ type InspectorProps = {
   refreshToken?: number;
   tab: InspectorTab;
   ignoredSkillNames?: string[];
+  /** Active Agent — Role Prompt shown read-only in Context. */
+  agent?: Agent | null;
 };
 
 export function Inspector(props: InspectorProps) {
@@ -138,6 +140,7 @@ export function Inspector(props: InspectorProps) {
               ready={Boolean(props.ready)}
               refreshToken={props.refreshToken}
               ignoredSkillNames={props.ignoredSkillNames}
+              agent={props.agent}
             />
           </div>
         </Show>

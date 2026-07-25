@@ -50,18 +50,28 @@ export function appendUserMessage(state: TimelineState, text: string, at = Date.
 }
 
 export function applyHostState(state: TimelineState, hostState: PiHostState): TimelineState {
+  // Host truth wins for busy flags. When the host is no longer streaming/compacting,
+  // clear overlay busy statuses so the composer cannot stay locked after a finished turn
+  // (missed terminal events, late compaction end, or IPC race after prompt settles).
+  let runStatus = state.status.runStatus;
+  if (hostState.isCompacting) {
+    runStatus = "compacting";
+  } else if (hostState.isStreaming) {
+    runStatus = "streaming";
+  } else if (
+    runStatus === "streaming" ||
+    runStatus === "compacting" ||
+    runStatus === "retrying"
+  ) {
+    runStatus = "idle";
+  }
+
   return {
     ...state,
     hostState,
     status: {
       ...state.status,
-      runStatus: hostState.isCompacting
-        ? "compacting"
-        : hostState.isStreaming
-          ? "streaming"
-          : state.status.runStatus === "streaming"
-            ? "idle"
-            : state.status.runStatus,
+      runStatus,
     },
   };
 }
@@ -126,6 +136,27 @@ export function beginTurnOverlay(
   );
   // Seed an empty assistant so the timeline shows Thinking… before the first token/tool.
   return getOrCreateAssistant(withUser, at).state;
+}
+
+/**
+ * Retry / continue without a new user bubble: clear live overlay, mark streaming,
+ * seed an empty assistant so the list does not sit silent while the host warms up.
+ * Committed JSONL items (including prior errors) stay via session.items merge.
+ */
+export function beginContinueOverlay(
+  state: TimelineState,
+  at = Date.now(),
+): TimelineState {
+  const base: TimelineState = {
+    ...createInitialTimelineState(),
+    hostState: state.hostState,
+    status: {
+      errorMessage: null,
+      retryAttempt: null,
+      runStatus: "streaming",
+    },
+  };
+  return getOrCreateAssistant(base, at).state;
 }
 
 export function reduceTimelineEvent(state: TimelineState, event: PiHostEvent): TimelineState {

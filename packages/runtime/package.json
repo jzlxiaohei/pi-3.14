@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@pi-3.14/model": "workspace:^",
-    "@earendil-works/pi-coding-agent": "^0.80.3"
+    "@earendil-works/pi-coding-agent": "^0.82.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1"

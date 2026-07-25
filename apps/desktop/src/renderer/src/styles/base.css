@@ -38,25 +38,21 @@ button:disabled {
   cursor: default;
 }
 
-/* Minimal form reset — no full normalize. Kill native chrome; focus is owned by components.
-   Keep checkbox/radio native enough to stay visible/clickable (appearance:none hides them). */
-input:not([type="checkbox"]):not([type="radio"]),
+/* Form reset must stay low-specificity (element only).
+   `input:not([type=checkbox]):not([type=radio])` is (0,2,1) and beats
+   single-class field styles like `.templates-field input` (0,1,1).
+   Never zero border/background/box-shadow here — components own chrome. */
+input,
 textarea {
   margin: 0;
-  border: 0;
-  border-radius: 0;
   outline: none;
-  background: none;
-  box-shadow: none;
-  appearance: none;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):focus,
-input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+input:focus,
+input:focus-visible,
 textarea:focus,
 textarea:focus-visible {
   outline: none;
-  box-shadow: none;
 }
 
 input[type="checkbox"],

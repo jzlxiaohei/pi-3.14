@@ -8,9 +8,11 @@ import {
   PanelRight,
 } from "lucide-solid";
 import { For, Show, type JSX } from "solid-js";
+import type { Agent } from "../../../../../shared/desktop-contracts";
 import type { TimelineRunStatus } from "@/features/agent-timeline";
 import { Button } from "@/shared/ui/button";
 import type { TaskStatus } from "../model";
+import { RolePromptPanel } from "./role-prompt-panel";
 
 export type ChatSideQuotaWindow = {
   label: string;
@@ -33,6 +35,12 @@ type ChatSidePanelProps = {
   quotaWindows?: ChatSideQuotaWindow[];
   quotaMessage?: string | null;
   ready?: boolean;
+  agent?: Agent | null;
+  rolePromptDisabled?: boolean;
+  rolePromptEditorOpen?: boolean;
+  onRolePromptEditorOpenChange?: (open: boolean) => void;
+  onAgentUpdated?: (agent: Agent) => void;
+  onRolePromptSaved?: () => void;
   onReviewChanges?: () => void;
   onOpenInspector?: () => void;
 };
@@ -48,6 +56,15 @@ export function ChatSidePanel(props: ChatSidePanelProps) {
       <Show when={props.lead != null}>
         <div class="chat-side-panel__lead">{props.lead}</div>
       </Show>
+
+      <RolePromptPanel
+        agent={props.agent ?? null}
+        disabled={props.rolePromptDisabled}
+        editorOpen={props.rolePromptEditorOpen}
+        onEditorOpenChange={props.onRolePromptEditorOpenChange}
+        onAgentUpdated={props.onAgentUpdated}
+        onRolePromptSaved={props.onRolePromptSaved}
+      />
 
       <section class="chat-side-section" aria-label="Session">
         <header class="chat-side-section__head">

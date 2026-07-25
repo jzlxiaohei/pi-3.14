@@ -31,7 +31,7 @@
   "dependencies": {
     "@pi-3.14/model": "workspace:^",
     "@pi-3.14/runtime": "workspace:^",
-    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "^0.82.0",
     "typebox": "1.1.38"
   },
   "devDependencies": {

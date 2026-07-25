@@ -1,4 +1,4 @@
-# `@pi-3.14/session`
+·# `@pi-3.14/session`
 
 通用、只读的 PI Session JSONL 解析与分析包。它把 append-only JSONL 转成可序列化快照，
 并提供上下文、执行过程、用量和图投影，不依赖任何应用层数据模型。

@@ -157,6 +157,9 @@ export interface PiLiveProviderRequest {
   payload: JsonValue;
 }
 
+/** How much transcript work `inspectLive` should do. */
+export type PiLiveInspectDetail = "summary" | "full";
+
 /** Live-only inspect fields from an embedded PI host. */
 export interface PiLiveInspectSnapshot {
   systemPrompt: string;
@@ -165,9 +168,12 @@ export interface PiLiveInspectSnapshot {
   sessionStats: PiSessionStatsSnapshot;
   skills: PiLiveSkillInfo[];
   tools: PiLiveToolInfo[];
-  /** Session context messages (AgentMessage-shaped, JSON-safe). */
+  /**
+   * Session context messages (AgentMessage-shaped, JSON-safe).
+   * Empty array when `detail: "summary"` — avoid convertToLlm / IPC megabytes.
+   */
   sessionMessages: JsonValue;
-  /** convertToLlm(sessionMessages) + system + tool names. */
+  /** convertToLlm(sessionMessages) + system + tool names. Empty when summary. */
   assembled: PiLiveAssembledContext;
   /** Most recent provider wire payload; null if no request yet this host life. */
   lastProviderRequest: PiLiveProviderRequest | null;

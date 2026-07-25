@@ -25,6 +25,7 @@ import type {
 import { buildTimelineViewEntries, timelineActivityLabel } from "../core/view-items";
 import { AssistantMessage } from "./AssistantMessage";
 import { ContextNote } from "./ContextNote";
+import { ErrorGroup } from "./ErrorGroup";
 import { ToolCallBlock } from "./ToolCallBlock";
 import { ToolCallGroup } from "./ToolCallGroup";
 import { UserMessage } from "./UserMessage";
@@ -287,9 +288,13 @@ type TimelineEntryProps = {
 function TimelineEntry(props: TimelineEntryProps) {
   // Key chrome on stable slots — NOT volatile JSONL/overlay item.id.
   // Overlay → snapshot commit rewrites message ids; remounting here flashes the list and jumps scroll.
-  const groupId = () => {
+  const toolGroupId = () => {
     const entry = props.entry();
     return entry.type === "tool_group" ? entry.id : null;
+  };
+  const errorGroupId = () => {
+    const entry = props.entry();
+    return entry.type === "error_group" ? entry.id : null;
   };
   /** user | assistant | tool | … — stable across commit for a given Index row. */
   const itemKind = () => {
@@ -300,6 +305,10 @@ function TimelineEntry(props: TimelineEntryProps) {
     const entry = props.entry();
     return entry.type === "tool_group" ? entry.tools : [];
   };
+  const groupErrors = () => {
+    const entry = props.entry();
+    return entry.type === "error_group" ? entry.errors : [];
+  };
   const item = () => {
     const entry = props.entry();
     return entry.type === "item" ? entry.item : null;
@@ -307,7 +316,7 @@ function TimelineEntry(props: TimelineEntryProps) {
 
   return (
     <>
-      <Show when={groupId()}>
+      <Show when={toolGroupId()}>
         {(id) => (
           <ToolCallGroup
             groupId={id()}
@@ -321,6 +330,9 @@ function TimelineEntry(props: TimelineEntryProps) {
             onDenyApproval={props.onDenyApproval}
           />
         )}
+      </Show>
+      <Show when={errorGroupId()}>
+        {(id) => <ErrorGroup groupId={id()} errors={groupErrors()} />}
       </Show>
       <Show when={itemKind()} keyed>
         <TimelineItemEntry

@@ -19,10 +19,22 @@ ${QUESTIONNAIRE_START_TAG}
       "id": "stable-kebab-case-id",
       "type": "single_choice",
       "prompt": "The question shown to the user",
-      "details": "Optional Markdown context or recommendation",
+      "details": "Optional Markdown: why this matters, and **which option you recommend** (and why).",
       "options": [
-        { "value": "A", "label": "First option" },
+        { "value": "A", "label": "First option", "recommended": true },
         { "value": "B", "label": "Second option" }
+      ],
+      "allowOther": true
+    },
+    {
+      "id": "features",
+      "type": "multi_choice",
+      "prompt": "Which capabilities do you need?",
+      "details": "Recommended defaults for a first pass are marked; uncheck anything you do not want.",
+      "options": [
+        { "value": "search", "label": "Search", "recommended": true },
+        { "value": "stats", "label": "Stats", "recommended": true },
+        { "value": "export", "label": "Export" }
       ],
       "allowOther": true
     }
@@ -38,5 +50,12 @@ Contract rules:
 - Use short, unique, stable ids and option values within the response.
 - Set allowOther to true when the user may provide a different requirement or clarification.
 - Put recommendations and non-question context in details, not in prompt.
+- **Recommend options for the user whenever you have a good default:**
+  - For single_choice: mark exactly one option with \`"recommended": true\` when a default is clear.
+  - For multi_choice: mark one or more sensible default options with \`"recommended": true\`.
+  - In details, briefly state the recommendation in plain language (e.g. “建议选 A：…”).
+  - Prefer concrete, action-oriented option labels over vague ones; put trade-offs in details.
+  - If options are asymmetric, still give a recommended path so the user can accept quickly and only diverge when needed.
 - After the closing tag, stop and wait for the user's response.
+- Do not stream or dump the JSON envelope as readable prose for the user; the product UI renders it as a form.
 `.trim();

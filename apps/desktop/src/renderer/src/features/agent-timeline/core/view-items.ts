@@ -1,10 +1,17 @@
-import type { TimelineItem, TimelineRunStatus, TimelineToolCall } from "./types";
+import type {
+  TimelineAssistantMessage,
+  TimelineItem,
+  TimelineRunStatus,
+  TimelineToolCall,
+} from "./types";
 
 export type TimelineViewEntry =
   | { type: "item"; item: TimelineItem }
-  | { type: "tool_group"; id: string; tools: TimelineToolCall[] };
+  | { type: "tool_group"; id: string; tools: TimelineToolCall[] }
+  /** Consecutive empty failed/aborted assistants — one compact row in the list. */
+  | { type: "error_group"; id: string; errors: TimelineAssistantMessage[] };
 
-/** Keep every consecutive tool run in one stable group from the first tool onward. */
+/** Keep every consecutive tool run / error-only assistant run in one stable group. */
 export function buildTimelineViewEntries(
   items: TimelineItem[],
   options: {
@@ -24,6 +31,7 @@ export function buildTimelineViewEntries(
 
   const entries: TimelineViewEntry[] = [];
   let pendingTools: TimelineToolCall[] = [];
+  let pendingErrors: TimelineAssistantMessage[] = [];
 
   const flushTools = () => {
     if (pendingTools.length === 0) return;
@@ -35,16 +43,46 @@ export function buildTimelineViewEntries(
     pendingTools = [];
   };
 
+  const flushErrors = () => {
+    if (pendingErrors.length === 0) return;
+    entries.push({
+      type: "error_group",
+      id: `error-group-${pendingErrors[0]!.id}`,
+      errors: pendingErrors,
+    });
+    pendingErrors = [];
+  };
+
   for (const item of visible) {
-    if (item.kind !== "tool") {
-      flushTools();
-      entries.push({ type: "item", item });
+    if (item.kind === "tool") {
+      flushErrors();
+      pendingTools.push(item);
       continue;
     }
-    pendingTools.push(item);
+    flushTools();
+    if (item.kind === "assistant" && isErrorOnlyAssistant(item)) {
+      pendingErrors.push(item);
+      continue;
+    }
+    flushErrors();
+    entries.push({ type: "item", item });
   }
   flushTools();
+  flushErrors();
   return entries;
+}
+
+/** Empty failed/aborted assistant — no body text/thinking (Connection error chains). */
+export function isErrorOnlyAssistant(
+  item: TimelineItem,
+): item is TimelineAssistantMessage {
+  if (item.kind !== "assistant") return false;
+  const failed =
+    item.stopReason === "error" ||
+    item.stopReason === "aborted" ||
+    Boolean(item.errorMessage?.trim());
+  if (!failed) return false;
+  return !item.text.trim() && !item.thinking?.trim();
 }
 
 /**

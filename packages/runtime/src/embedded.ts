@@ -37,6 +37,7 @@ import {
   promptText,
 } from "./contracts.js";
 import { messageStopReason, messageText, projectPiEvent } from "./events.js";
+import { formatProviderErrorMessage } from "./format-error.js";
 import { repairOrphanedToolCalls } from "./repair-orphaned-tools.js";
 import {
   raceApproval,
@@ -125,9 +126,22 @@ export class EmbeddedPiHost implements PiHost {
 
   continueTurn(): PiTurnHandle {
     return this.beginTurn(async (session) => {
-      // Ensure agent transcript matches the session leaf before continuing.
+      // Match session leaf path into agent transcript.
       const context = session.sessionManager.buildSessionContext();
-      session.agent.state.messages = context.messages;
+      // agent.continue() requires the last message to be user or toolResult — not
+      // assistant. Failed/aborted assistants stay on the JSONL path (leaf unchanged)
+      // so the UI does not "leave the branch"; we only drop them from agent state,
+      // same as PI AgentSession._prepareRetry.
+      session.agent.state.messages = stripTrailingFailedAssistants(context.messages);
+      const last = session.agent.state.messages.at(-1);
+      if (!last) {
+        throw new Error("No messages to continue from");
+      }
+      if (last.role === "assistant") {
+        throw new Error(
+          "Cannot retry: latest turn already completed successfully. Edit the user message to branch.",
+        );
+      }
       await session.agent.continue();
     });
   }
@@ -208,14 +222,12 @@ export class EmbeddedPiHost implements PiHost {
     };
   }
 
-  async inspectLive(): Promise<PiLiveInspectSnapshot> {
+  async inspectLive(options?: { detail?: "summary" | "full" }): Promise<PiLiveInspectSnapshot> {
     this.assertAvailable();
     const session = this.session;
     const stats = session.getSessionStats();
     const contextUsage = session.getContextUsage();
-    const sessionContext = session.sessionManager.buildSessionContext();
-    const sessionMessages = toJsonValue(sessionContext.messages);
-    const assembledMessages = toJsonValue(convertToLlm(sessionContext.messages));
+    const detail = options?.detail ?? "full";
     const skills = session.resourceLoader.getSkills().skills.map((skill) => ({
       name: skill.name,
       description: skill.description,
@@ -226,7 +238,7 @@ export class EmbeddedPiHost implements PiHost {
       description: tool.description,
     }));
     const toolNames = session.getActiveToolNames();
-    return {
+    const base = {
       systemPrompt: session.systemPrompt,
       activeToolNames: toolNames,
       contextUsage: contextUsage
@@ -247,6 +259,26 @@ export class EmbeddedPiHost implements PiHost {
       },
       skills,
       tools,
+    };
+    // Summary: HUD / meters only — convertToLlm + full transcript is multi‑MB and
+    // freezes the host + main IPC path after a quick failed Retry.
+    if (detail === "summary") {
+      return {
+        ...base,
+        sessionMessages: [],
+        assembled: {
+          systemPrompt: session.systemPrompt,
+          messages: [],
+          toolNames,
+        },
+        lastProviderRequest: null,
+      };
+    }
+    const sessionContext = session.sessionManager.buildSessionContext();
+    const sessionMessages = toJsonValue(sessionContext.messages);
+    const assembledMessages = toJsonValue(convertToLlm(sessionContext.messages));
+    return {
+      ...base,
       sessionMessages,
       assembled: {
         systemPrompt: session.systemPrompt,
@@ -319,7 +351,7 @@ export class EmbeddedPiHost implements PiHost {
       env: auth.env,
       signal: controller.signal,
       reserveTokens,
-      streamFn: session.agent.streamFn,
+      streamFn: session.agent.streamFunction,
     });
     if (result.aborted) throw new Error("Branch summary aborted");
     if (result.error) throw new Error(result.error);
@@ -365,7 +397,6 @@ export class EmbeddedPiHost implements PiHost {
     run: (session: AgentSession) => Promise<void>,
   ): PiTurnHandle {
     this.assertAvailable();
-    if (this.active) throw new Error("A PI turn is already running");
 
     const events = new AsyncQueue<PiHostEvent>();
     const session = this.session;
@@ -373,74 +404,97 @@ export class EmbeddedPiHost implements PiHost {
     let streamText = "";
     let latestNonEmptyText = "";
     let lastStopReason: PiStopReason | undefined;
-    const active: ActiveTurn = {
-      unsubscribe: session.subscribe((event) => {
-        const projected = projectPiEvent(event);
-        if (projected) events.push(projected);
-        if (
-          event.type === "message_start" &&
-          "role" in event.message &&
-          event.message.role === "assistant"
-        ) {
-          streamText = "";
-        }
-        if (projected?.type === "text_delta") {
-          streamText += projected.text;
-          if (streamText) latestNonEmptyText = streamText;
-        }
-        if (event.type !== "message_end") return;
-        const reason = messageStopReason(event.message);
-        if (!reason) return;
-        lastStopReason = reason;
-        if (reason !== "toolUse") {
-          lastText = messageText(event.message) || streamText || latestNonEmptyText;
-        }
-      }),
-    };
-    this.active = active;
 
-    const result = this.finishTurn(session, active, events, run, () => ({
-      text: lastText,
-      stopReason: lastStopReason,
-    }));
+    // Settle any prior turn first (async). UI may unlock early between PI auto-retry
+    // gaps while this.active is still set — abort + wait instead of hard-failing.
+    const result = (async (): Promise<PiTurnResult> => {
+      await this.settleActiveTurn();
+      this.assertAvailable();
+      if (this.active) throw new Error("A PI turn is already running");
+
+      const active: ActiveTurn = {
+        unsubscribe: session.subscribe((event) => {
+          const projected = projectPiEvent(event);
+          if (projected) events.push(projected);
+          if (
+            event.type === "message_start" &&
+            "role" in event.message &&
+            event.message.role === "assistant"
+          ) {
+            streamText = "";
+          }
+          if (projected?.type === "text_delta") {
+            streamText += projected.text;
+            if (streamText) latestNonEmptyText = streamText;
+          }
+          if (event.type !== "message_end") return;
+          const reason = messageStopReason(event.message);
+          if (!reason) return;
+          lastStopReason = reason;
+          if (reason !== "toolUse") {
+            lastText = messageText(event.message) || streamText || latestNonEmptyText;
+          }
+        }),
+      };
+      this.active = active;
+
+      let thrown: unknown;
+      try {
+        await run(session);
+      } catch (error) {
+        thrown = error;
+      } finally {
+        active.unsubscribe();
+        if (this.active === active) this.active = undefined;
+      }
+
+      const observed = {
+        text: lastText,
+        stopReason: lastStopReason,
+      };
+      const fallback = lastAssistant(session);
+      const reason = terminalReason(observed.stopReason ?? fallback.stopReason, thrown);
+      const turnResult: PiTurnResult = {
+        stopReason: reason,
+        text: observed.text || fallback.text,
+        sessionId: session.sessionId,
+        sessionPath: session.sessionFile ?? null,
+        leafEntryId: session.sessionManager.getLeafId(),
+        ...(reason === "error"
+          ? {
+              errorMessage: resolveTurnErrorMessage(
+                thrown,
+                session.agent.state.errorMessage,
+              ),
+            }
+          : {}),
+      };
+      events.close();
+      return turnResult;
+    })();
+
     return { events, result };
   }
 
-  private async finishTurn(
-    session: AgentSession,
-    active: ActiveTurn,
-    events: AsyncQueue<PiHostEvent>,
-    run: (session: AgentSession) => Promise<void>,
-    readObserved: () => { text: string; stopReason?: PiStopReason },
-  ): Promise<PiTurnResult> {
-    let thrown: unknown;
-    try {
-      await run(session);
-    } catch (error) {
-      thrown = error;
-    } finally {
-      active.unsubscribe();
-      if (this.active === active) this.active = undefined;
+  /**
+   * Abort an in-flight host turn and wait for `this.active` to clear.
+   * Prevents "A PI turn is already running" when the UI unlocks early (auto-retry
+   * gaps report isStreaming=false while EmbeddedPiHost still owns a turn).
+   */
+  private async settleActiveTurn(): Promise<void> {
+    if (!this.active) return;
+    await this.session.abort().catch(() => {});
+    for (let attempt = 0; attempt < 150 && this.active; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
-
-    const observed = readObserved();
-    const fallback = lastAssistant(session);
-    const reason = terminalReason(observed.stopReason ?? fallback.stopReason, thrown);
-    const result: PiTurnResult = {
-      stopReason: reason,
-      text: observed.text || fallback.text,
-      sessionId: session.sessionId,
-      sessionPath: session.sessionFile ?? null,
-      leafEntryId: session.sessionManager.getLeafId(),
-      ...(reason === "error"
-        ? {
-            errorMessage:
-              errorMessage(thrown) ?? session.agent.state.errorMessage ?? "PI turn failed",
-          }
-        : {}),
-    };
-    events.close();
-    return result;
+    if (this.active) {
+      try {
+        this.active.unsubscribe();
+      } catch {
+        /* ignore */
+      }
+      this.active = undefined;
+    }
   }
 
   private assertAvailable(): void {
@@ -631,7 +685,36 @@ function terminalReason(
   return "error";
 }
 
-function errorMessage(error: unknown): string | undefined {
-  if (error === undefined) return undefined;
-  return error instanceof Error ? error.message : String(error);
+function resolveTurnErrorMessage(
+  thrown: unknown,
+  sessionError: string | null | undefined,
+): string {
+  if (thrown !== undefined) return formatProviderErrorMessage(thrown);
+  if (typeof sessionError === "string" && sessionError.trim()) {
+    // Session may already store a short SDK message; re-classify for a hint.
+    return formatProviderErrorMessage(sessionError.trim());
+  }
+  return "PI turn failed";
+}
+
+/**
+ * Drop trailing error/aborted assistant messages so `agent.continue()` is legal
+ * without moving the SessionManager leaf (avoids path/branch UI jumps).
+ */
+function stripTrailingFailedAssistants<T extends { role?: string; stopReason?: string }>(
+  messages: T[],
+): T[] {
+  let end = messages.length;
+  while (end > 0) {
+    const last = messages[end - 1]!;
+    if (
+      last.role === "assistant" &&
+      (last.stopReason === "error" || last.stopReason === "aborted")
+    ) {
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return end === messages.length ? messages : messages.slice(0, end);
 }

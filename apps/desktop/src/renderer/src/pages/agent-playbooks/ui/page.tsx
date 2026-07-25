@@ -1,15 +1,17 @@
 import {
+  Check,
   ChevronDown,
   ChevronUp,
-  Copy,
+  GitFork,
   LoaderCircle,
+  Pencil,
   Plus,
   RotateCcw,
   Save,
   Trash2,
   X,
 } from "lucide-solid";
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onMount } from "solid-js";
 import type { AgentTemplate } from "../../../../../shared/desktop-contracts";
 import { Button } from "@/shared/ui/button";
 import { Dialog } from "@/shared/ui/dialog";
@@ -28,6 +30,10 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
   const [confirm, setConfirm] = createSignal<
     null | { kind: "discard"; nextId: string | null } | { kind: "delete" } | { kind: "reset" }
   >(null);
+  const [editingName, setEditingName] = createSignal(false);
+  const [editingDesc, setEditingDesc] = createSignal(false);
+  let nameInputEl: HTMLInputElement | undefined;
+  let descInputEl: HTMLInputElement | undefined;
 
   onMount(() => {
     props.onModelReady?.(model);
@@ -39,6 +45,36 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
       .then(setAgentTemplates)
       .catch(() => setAgentTemplates([]));
   });
+
+  createEffect(() => {
+    model.selectedId();
+    setEditingName(false);
+    setEditingDesc(false);
+  });
+
+  function startEditName(): void {
+    setEditingName(true);
+    queueMicrotask(() => {
+      nameInputEl?.focus();
+      nameInputEl?.select();
+    });
+  }
+
+  function finishEditName(): void {
+    setEditingName(false);
+  }
+
+  function startEditDesc(): void {
+    setEditingDesc(true);
+    queueMicrotask(() => {
+      descInputEl?.focus();
+      descInputEl?.select();
+    });
+  }
+
+  function finishEditDesc(): void {
+    setEditingDesc(false);
+  }
 
   async function handleSave(): Promise<void> {
     if (!model.dirty() || model.saving()) return;
@@ -202,11 +238,50 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
           when={selected() && draft()}
           fallback={<p class="templates-muted templates-detail-empty">选择左侧路径以编辑</p>}
         >
-          {/* Identity + toolbar */}
+          <div class="templates-detail-column">
           <header class="playbooks-detail__toolbar">
             <div class="playbooks-detail__identity">
               <div class="playbooks-detail__title-row">
-                <h2 class="playbooks-detail__title">{draft()!.name || "未命名路径"}</h2>
+                <Show
+                  when={editingName()}
+                  fallback={
+                    <div class="playbooks-inline-field playbooks-inline-field--title">
+                      <span class="playbooks-inline-field__text">
+                        {draft()!.name.trim() || "未命名路径"}
+                      </span>
+                      <IconButton label="编辑名称" size="sm" onClick={startEditName}>
+                        <Pencil size={14} />
+                      </IconButton>
+                    </div>
+                  }
+                >
+                  <div class="playbooks-inline-field playbooks-inline-field--title playbooks-inline-field--edit">
+                    <input
+                      ref={nameInputEl}
+                      type="text"
+                      class="playbooks-inline-input playbooks-inline-input--title"
+                      value={draft()!.name}
+                      placeholder="路径名称"
+                      aria-label="路径名称"
+                      onInput={(event) => model.patchDraft({ name: event.currentTarget.value })}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === "Escape") {
+                          event.preventDefault();
+                          finishEditName();
+                        }
+                      }}
+                      onBlur={finishEditName}
+                    />
+                    <IconButton
+                      label="确认"
+                      size="sm"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={finishEditName}
+                    >
+                      <Check size={14} />
+                    </IconButton>
+                  </div>
+                </Show>
                 <span
                   class="templates-badge"
                   classList={{ "templates-badge--user": selected()!.source === "user" }}
@@ -230,7 +305,7 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
                 disabled={model.busyAction()}
                 onClick={() => void handleDuplicate()}
               >
-                <Copy size={15} />
+                <GitFork size={15} />
               </IconButton>
               <Show when={selected()!.source === "system"}>
                 <IconButton
@@ -276,23 +351,56 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
 
           <div class="playbooks-detail__body">
             <section class="playbooks-meta" aria-label="路径信息">
-              <label class="playbooks-meta__field">
-                <span class="playbooks-meta__label">名称</span>
-                <input
-                  type="text"
-                  value={draft()!.name}
-                  onInput={(event) => model.patchDraft({ name: event.currentTarget.value })}
-                />
-              </label>
-              <label class="playbooks-meta__field playbooks-meta__field--wide">
+              <div class="playbooks-meta__field playbooks-meta__field--wide">
                 <span class="playbooks-meta__label">描述</span>
-                <input
-                  type="text"
-                  placeholder="新建 Task 时展示给用户"
-                  value={draft()!.description}
-                  onInput={(event) => model.patchDraft({ description: event.currentTarget.value })}
-                />
-              </label>
+                <Show
+                  when={editingDesc()}
+                  fallback={
+                    <div class="playbooks-inline-field playbooks-inline-field--desc">
+                      <span
+                        class="playbooks-inline-field__text"
+                        classList={{
+                          "playbooks-inline-field__text--placeholder": !draft()!.description.trim(),
+                        }}
+                      >
+                        {draft()!.description.trim() || "未填写描述（新建 Task 时展示）"}
+                      </span>
+                      <IconButton label="编辑描述" size="sm" onClick={startEditDesc}>
+                        <Pencil size={14} />
+                      </IconButton>
+                    </div>
+                  }
+                >
+                  <div class="playbooks-inline-field playbooks-inline-field--desc playbooks-inline-field--edit">
+                    <input
+                      ref={descInputEl}
+                      type="text"
+                      class="playbooks-inline-input"
+                      placeholder="新建 Task 时展示给用户"
+                      aria-label="路径描述"
+                      value={draft()!.description}
+                      onInput={(event) =>
+                        model.patchDraft({ description: event.currentTarget.value })
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === "Escape") {
+                          event.preventDefault();
+                          finishEditDesc();
+                        }
+                      }}
+                      onBlur={finishEditDesc}
+                    />
+                    <IconButton
+                      label="确认"
+                      size="sm"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={finishEditDesc}
+                    >
+                      <Check size={14} />
+                    </IconButton>
+                  </div>
+                </Show>
+              </div>
             </section>
 
             <section class="playbooks-steps" aria-label="步骤配置">
@@ -417,7 +525,7 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
                           <label class="playbooks-stepper__field playbooks-stepper__field--full">
                             <span>Starter（建议首条）</span>
                             <textarea
-                              rows={5}
+                              rows={3}
                               value={step.starterPrompt}
                               placeholder={"/skill-name\n\n任务说明…"}
                               onInput={(event) =>
@@ -434,6 +542,7 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
                 </For>
               </ol>
             </section>
+          </div>
           </div>
         </Show>
       </section>

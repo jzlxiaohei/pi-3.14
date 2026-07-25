@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseQuestionnaire } from "./questionnaire";
+import { parseQuestionnaire, viewAssistantQuestionnaire } from "./questionnaire";
+import { inspectQuestionnaireDisplay } from "../../../../../shared/questionnaire-protocol";
 
 const TWELVE_QUESTION_REPLY = `我先按当前工作区代码和本机现有数据做了梳理，未修改代码。
 
@@ -93,7 +94,7 @@ test("prefers the versioned questionnaire envelope and preserves surrounding pro
       "prompt": "首期范围？",
       "details": "选择一个方案。",
       "options": [
-        { "value": "A", "label": "只迁移 Task" },
+        { "value": "A", "label": "只迁移 Task", "recommended": true },
         { "value": "B", "label": "迁移 Task 和偏好" }
       ],
       "allowOther": true
@@ -103,7 +104,7 @@ test("prefers the versioned questionnaire envelope and preserves surrounding pro
       "type": "multi_choice",
       "prompt": "需要哪些能力？",
       "options": [
-        { "value": "search", "label": "搜索" },
+        { "value": "search", "label": "搜索", "recommended": true },
         { "value": "stats", "label": "统计" }
       ],
       "allowOther": true
@@ -130,13 +131,47 @@ test("prefers the versioned questionnaire envelope and preserves surrounding pro
     title: "首期范围？",
     markdown: "选择一个方案。",
     options: [
-      { value: "A", label: "只迁移 Task" },
+      { value: "A", label: "只迁移 Task", recommended: true },
       { value: "B", label: "迁移 Task 和偏好" },
     ],
     allowOther: true,
   });
   assert.equal(result.questions[1]?.type, "multi_choice");
+  assert.equal(result.questions[1]?.options[0]?.recommended, true);
   assert.equal(result.questions[2]?.type, "text");
+});
+
+test("hides incomplete questionnaire JSON while the envelope is still streaming", () => {
+  const partial = `前置说明。
+
+<pie-questionnaire version="1">
+{
+  "version": 1,
+  "title": "半截",
+  "questions": [
+    {
+      "id": "scope",
+      "type": "single_choice",
+      "prompt": "范围？",
+      "options": [
+        { "value": "A", "label": "A" `;
+
+  const display = inspectQuestionnaireDisplay(partial);
+  assert.equal(display.phase, "partial");
+  if (display.phase !== "partial") return;
+  assert.equal(display.intro, "前置说明。");
+
+  const view = viewAssistantQuestionnaire(partial, { streaming: true });
+  assert.equal(view.phase, "building");
+  if (view.phase !== "building") return;
+  assert.equal(view.intro, "前置说明。");
+});
+
+test("treats a trailing partial start tag as building, not plain JSON dump", () => {
+  const display = inspectQuestionnaireDisplay("分析中…\n\n<pie-quest");
+  assert.equal(display.phase, "partial");
+  if (display.phase !== "partial") return;
+  assert.equal(display.intro, "分析中…");
 });
 
 test("detects the 12-question section without treating earlier numbered analysis as questions", () => {
@@ -200,4 +235,51 @@ No. Sessions stay in JSONL files.
 `);
 
   assert.equal(result, null);
+});
+
+test("repairs common questionnaire JSON typo and shows broken when unrecoverable", () => {
+  const brokenColon = `Intro.
+
+<pie-questionnaire version="1">
+{
+  "version": 1,
+  "title": "T",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single_choice",
+      "prompt": "Pick one?",
+      "options": [
+        { "value": "a", "label", "Option A", "recommended": true },
+        { "value": "b", "label": "Option B" }
+      ]
+    }
+  ]
+}
+</pie-questionnaire>
+`;
+  const repaired = parseQuestionnaire(brokenColon);
+  assert.ok(repaired);
+  assert.equal(repaired.questions.length, 1);
+  assert.equal(repaired.questions[0]?.options[0]?.label, "Option A");
+  assert.equal(viewAssistantQuestionnaire(brokenColon).phase, "ready");
+
+  const stillBad = `Intro.
+
+<pie-questionnaire version="1">
+{ not json at all }
+</pie-questionnaire>
+`;
+  const display = inspectQuestionnaireDisplay(stillBad);
+  assert.equal(display.phase, "invalid");
+  if (display.phase === "invalid") {
+    assert.match(display.raw, /pie-questionnaire/);
+    assert.match(display.raw, /not json at all/);
+  }
+  const view = viewAssistantQuestionnaire(stillBad, { streaming: false });
+  assert.equal(view.phase, "broken");
+  if (view.phase === "broken") {
+    assert.match(view.raw, /not json at all/);
+    assert.equal(view.fullText, stillBad);
+  }
 });

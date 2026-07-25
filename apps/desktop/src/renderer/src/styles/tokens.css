@@ -59,7 +59,9 @@
   /* Desktop shell roles */
   --surface-titlebar: rgba(230,239,246,.82);
   --surface-rail: rgba(216,229,241,.85);
-  --surface-sidebar: #f8fafc;
+  /* Task list recess: light blue wash; cards use --surface-panel-solid on top */
+  --surface-sidebar: #e4eef7;
+  --surface-task-card: #ffffff;
   --traffic-close: #ff625a;
   --traffic-minimize: #ffbd2e;
   --traffic-zoom: #29c840;
@@ -124,7 +126,9 @@
   --surface-code: #0e1d2d;
   --surface-titlebar: rgba(12,25,41,.78);
   --surface-rail: rgba(13,29,46,.76);
-  --surface-sidebar: rgba(15,31,48,.76);
+  /* Task list: bluer recess; cards lift as cooler “white” panels */
+  --surface-sidebar: #0c2238;
+  --surface-task-card: #17344e;
   --text-primary: #f4f9fd;
   --text-secondary: #c2d1de;
   --text-tertiary: #8da4b8;

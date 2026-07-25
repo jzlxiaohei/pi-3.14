@@ -354,6 +354,7 @@ body[data-panel-resizing] .panel-slot {
 .search-box input {
   width: 100%;
   min-width: 0;
+  border: none;
   color: var(--text-primary);
   background: transparent;
   font-size: var(--text-sm);
@@ -495,14 +496,16 @@ body[data-panel-resizing] .panel-slot {
 }
 
 .task-block[data-expanded="true"] {
-  padding: 2px;
-  border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-panel-solid) 72%, var(--surface-subtle));
+  padding: 0;
+  border: 0;
+  background: var(--surface-task-card);
+  box-shadow: none;
 }
 
 .task-block[data-expanded="true"][data-selected="true"] {
-  border-color: color-mix(in srgb, var(--action-primary) 28%, var(--border-subtle));
-  background: color-mix(in srgb, var(--surface-selected) 55%, var(--surface-panel-solid));
+  border: 0;
+  background: var(--surface-task-card);
+  box-shadow: none;
 }
 
 /* L2 Session / step rows — only under the owning Task cluster. */
@@ -511,7 +514,7 @@ body[data-panel-resizing] .panel-slot {
   flex-direction: column;
   gap: 1px;
   margin: 0 4px 4px 28px;
-  padding: 2px 0 4px 10px;
+  padding: 8px 0 4px 10px;
   border-left: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
 }
 
@@ -626,14 +629,18 @@ body[data-panel-resizing] .panel-slot {
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: start;
   gap: 2px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  /* Task rows sit at L1 — stronger than L2 session labels. */
-  background: transparent;
+  /* White/elevated card on light-blue sidebar */
+  background: var(--surface-task-card);
+  box-shadow: var(--shadow-xs);
 }
 
 .task-block[data-expanded="true"] > .task-row-wrap {
   border-radius: calc(var(--radius-md) - 2px);
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
 }
 
 .task-row-wrap[data-archived="true"] {
@@ -655,12 +662,24 @@ body[data-panel-resizing] .panel-slot {
 
 .task-row-wrap:hover,
 .task-row-wrap:focus-within {
-  background: var(--surface-panel);
+  border-color: var(--border-default);
+  background: var(--surface-task-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .task-row-wrap[data-selected="true"] {
-  border-color: transparent;
-  background: var(--surface-selected);
+  border-color: color-mix(in srgb, var(--action-primary) 40%, var(--border-default));
+  background: var(--surface-task-card);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 1px color-mix(in srgb, var(--action-primary) 18%, transparent);
+}
+
+.task-block[data-expanded="true"] > .task-row-wrap:hover,
+.task-block[data-expanded="true"] > .task-row-wrap:focus-within,
+.task-block[data-expanded="true"] > .task-row-wrap[data-selected="true"] {
+  background: color-mix(in srgb, var(--surface-selected) 40%, var(--surface-task-card));
+  box-shadow: none;
 }
 
 .task-row-drag {
@@ -1449,6 +1468,7 @@ body[data-panel-resizing] .chat-gutter {
   margin: 0 0 14px;
   padding: 0 0 12px;
   border-bottom: 1px solid var(--border-subtle);
+  /* Actions stay in the centered content column, not the panel edge */
 }
 
 .playbooks-detail__identity {
@@ -1464,14 +1484,91 @@ body[data-panel-resizing] .chat-gutter {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
+  min-width: 0;
 }
 
-.playbooks-detail__title {
-  margin: 0;
+/*
+ * View (text+pencil) and edit (input+check) share the same row height so
+ * toggling does not reflow. Width hugs content — not full panel.
+ */
+.playbooks-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(100%, 28rem);
+  height: 32px;
+  box-sizing: border-box;
+}
+
+.playbooks-inline-field--title {
+  max-width: min(100%, 20rem);
+}
+
+.playbooks-inline-field--desc {
+  max-width: min(100%, 32rem);
+}
+
+.playbooks-inline-field__text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  line-height: 32px;
+  color: var(--text-primary);
+}
+
+.playbooks-inline-field--title .playbooks-inline-field__text {
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
+}
+
+.playbooks-inline-field__text--placeholder {
+  color: var(--text-disabled);
+  font-weight: var(--weight-regular);
+}
+
+.playbooks-inline-field--edit {
+  /* Reserve space for the check icon so width stays stable-ish */
+  min-width: 12ch;
+}
+
+input.playbooks-inline-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 12ch;
+  height: 32px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel-solid);
   color: var(--text-primary);
-  line-height: 1.3;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 30px;
+  outline: none;
+  cursor: text;
+  box-shadow: none;
+}
+
+input.playbooks-inline-input--title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  width: 14ch;
+}
+
+input.playbooks-inline-input:focus,
+input.playbooks-inline-input:focus-visible {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-focus);
+}
+
+input.playbooks-inline-input::placeholder {
+  color: var(--text-disabled);
+  font-weight: var(--weight-regular);
 }
 
 .playbooks-detail__id {
@@ -1499,7 +1596,6 @@ body[data-panel-resizing] .chat-gutter {
 
 .playbooks-detail__body {
   width: 100%;
-  max-width: 720px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1507,14 +1603,8 @@ body[data-panel-resizing] .chat-gutter {
 
 .playbooks-meta {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: 1fr;
   gap: 10px 12px;
-}
-
-@media (max-width: 900px) {
-  .playbooks-meta {
-    grid-template-columns: 1fr;
-  }
 }
 
 .playbooks-meta__field {
@@ -1530,24 +1620,6 @@ body[data-panel-resizing] .chat-gutter {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-}
-
-.playbooks-meta__field input {
-  width: 100%;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-panel);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  padding: 8px 10px;
-  outline: none;
-  box-shadow: var(--shadow-xs);
-}
-
-.playbooks-meta__field input:focus {
-  border-color: var(--border-focus);
-  box-shadow: var(--shadow-focus);
 }
 
 .playbooks-steps__head {
@@ -1625,8 +1697,8 @@ body[data-panel-resizing] .chat-gutter {
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--surface-panel);
-  box-shadow: var(--shadow-xs);
+  /* Slightly cooler than pure white so nested fields read as inputs */
+  background: color-mix(in srgb, var(--surface-muted) 55%, var(--surface-panel-solid));
 }
 
 .playbooks-stepper__card-head {
@@ -1679,7 +1751,9 @@ body[data-panel-resizing] .chat-gutter {
 .playbooks-stepper__field select,
 .playbooks-stepper__field textarea {
   width: 100%;
-  border: 1px solid var(--border-default);
+  min-height: 34px;
+  height: auto;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-panel-solid);
   color: var(--text-primary);
@@ -1688,18 +1762,33 @@ body[data-panel-resizing] .chat-gutter {
   font-weight: var(--weight-regular);
   letter-spacing: normal;
   text-transform: none;
-  padding: 7px 9px;
+  padding: 6px 10px;
   outline: none;
-  box-shadow: var(--shadow-xs);
+  cursor: text;
+  box-shadow: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
+.playbooks-stepper__field select {
+  cursor: pointer;
+}
+
+.playbooks-stepper__field input:hover,
+.playbooks-stepper__field select:hover,
+.playbooks-stepper__field textarea:hover {
+  border-color: color-mix(in srgb, var(--action-primary) 45%, var(--border-strong));
+}
+
+/* Starter — compact multi-line, not a tall slab */
 .playbooks-stepper__field textarea {
   resize: vertical;
-  min-height: 120px;
-  line-height: 1.45;
+  min-height: 56px;
+  line-height: 1.4;
   font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--surface-code);
+  font-size: 12.5px;
+  background: var(--surface-panel-solid);
 }
 
 .playbooks-stepper__mono {
@@ -1708,10 +1797,14 @@ body[data-panel-resizing] .chat-gutter {
 }
 
 .playbooks-stepper__field input:focus,
+.playbooks-stepper__field input:focus-visible,
 .playbooks-stepper__field select:focus,
-.playbooks-stepper__field textarea:focus {
+.playbooks-stepper__field select:focus-visible,
+.playbooks-stepper__field textarea:focus,
+.playbooks-stepper__field textarea:focus-visible {
   border-color: var(--border-focus);
   box-shadow: var(--shadow-focus);
+  background: var(--surface-panel-solid);
 }
 
 /* Provenance only — path structure is edited on Playbook Template admin. */
@@ -5166,10 +5259,20 @@ body[data-panel-resizing] .chat-gutter {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   overflow: auto;
   padding: 14px 16px 20px;
-  background: var(--surface-panel-solid);
+  /* Slightly muted so solid inputs read as editable wells */
+  background: var(--surface-subtle);
+}
+
+/* Centered content column — toolbar actions live inside this section */
+.templates-detail-column {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .templates-detail-panel__head,
@@ -5243,7 +5346,7 @@ body[data-panel-resizing] .chat-gutter {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 720px;
+  width: 100%;
 }
 
 .templates-field {
@@ -5264,11 +5367,14 @@ body[data-panel-resizing] .chat-gutter {
 }
 
 .templates-field input,
-.templates-field textarea {
+.templates-field textarea,
+.templates-skill-add input {
   width: 100%;
-  border: 1px solid var(--border-default);
+  min-height: 36px;
+  height: auto;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--surface-panel);
+  background: var(--surface-panel-solid);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--text-sm);
@@ -5276,20 +5382,35 @@ body[data-panel-resizing] .chat-gutter {
   letter-spacing: normal;
   padding: 8px 10px;
   outline: none;
-  box-shadow: var(--shadow-xs);
+  cursor: text;
+  box-shadow: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
+.templates-field input:hover,
+.templates-field textarea:hover,
+.templates-skill-add input:hover {
+  border-color: color-mix(in srgb, var(--action-primary) 45%, var(--border-strong));
+}
+
+/* Role Prompt only — description is single-line input, not this rule */
 .templates-field textarea {
   resize: vertical;
-  min-height: 200px;
+  min-height: 120px;
   line-height: 1.5;
   font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--surface-code);
+  font-size: 12.5px;
+  background: var(--surface-panel-solid);
 }
 
 .templates-field input:focus,
-.templates-field textarea:focus {
+.templates-field input:focus-visible,
+.templates-field textarea:focus,
+.templates-field textarea:focus-visible,
+.templates-skill-add input:focus,
+.templates-skill-add input:focus-visible {
   border-color: var(--border-focus);
   box-shadow: var(--shadow-focus);
 }
@@ -5310,14 +5431,6 @@ body[data-panel-resizing] .chat-gutter {
 
 .templates-skill-add input {
   flex: 1;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-panel);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  padding: 7px 10px;
-  box-shadow: var(--shadow-xs);
 }
 
 .templates-skill-add .button {

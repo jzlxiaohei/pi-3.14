@@ -1,4 +1,4 @@
-import { Check, PanelRight } from "lucide-solid";
+import { Check, Pencil } from "lucide-solid";
 import { Show, createMemo } from "solid-js";
 import type { Agent } from "../../../../../shared/desktop-contracts";
 import {
@@ -12,7 +12,7 @@ type RolePromptBannerProps = {
   ready: boolean;
   confirming?: boolean;
   onConfirm: () => void;
-  /** Focus the chat-right Role Prompt editor (close inspector if needed). */
+  /** Open Role Prompt editor dialog. */
   onEditRolePrompt: () => void;
 };
 
@@ -60,7 +60,7 @@ export function RolePromptBanner(props: RolePromptBannerProps) {
           </div>
           <div class="role-prompt-banner__actions">
             <Button variant="secondary" onClick={() => props.onEditRolePrompt()}>
-              <PanelRight size={14} />
+              <Pencil size={14} />
               编辑角色
             </Button>
             <Button

@@ -254,6 +254,7 @@ export function TemplatesPage(props: TemplatesPageProps) {
           when={selected() && draft()}
           fallback={<p class="templates-muted templates-detail-empty">选择左侧模板以编辑</p>}
         >
+          <div class="templates-detail-column">
           <header class="templates-detail-panel__head">
             <div class="templates-detail-panel__title">
               <h2>{draft()!.name || "未命名模板"}</h2>
@@ -345,7 +346,7 @@ export function TemplatesPage(props: TemplatesPageProps) {
             <label class="templates-field templates-field--block">
               <span>Role Prompt</span>
               <textarea
-                rows={16}
+                rows={10}
                 placeholder="可留空：实例化时回退 PI 默认 coding base"
                 value={draft()!.systemPrompt}
                 onInput={(event) =>
@@ -403,6 +404,7 @@ export function TemplatesPage(props: TemplatesPageProps) {
                 </ul>
               </Show>
             </div>
+          </div>
           </div>
         </Show>
       </section>

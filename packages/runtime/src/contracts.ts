@@ -61,8 +61,12 @@ export interface PiHost {
   newSession(options?: { parentSession?: string }): Promise<PiSessionReplacementResult>;
   switchSession(sessionPath: string): Promise<PiSessionReplacementResult>;
   fork(entryId: string): Promise<PiForkResult>;
-  /** Live system prompt, tools, context usage, and billed session stats. */
-  inspectLive(): Promise<PiLiveInspectSnapshot>;
+  /**
+   * Live system prompt, tools, context usage, and billed session stats.
+   * `detail: "summary"` skips transcript convertToLlm (HUD / meters).
+   * `detail: "full"` (default) includes sessionMessages + assembled for Context.
+   */
+  inspectLive(options?: { detail?: "summary" | "full" }): Promise<PiLiveInspectSnapshot>;
   /**
    * Move the leaf within the same session file (Cursor-style revert / branch).
    * Unlike `fork`, does not create a new session file.

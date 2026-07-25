@@ -67,7 +67,7 @@ export function UserMessage(props: UserMessageProps) {
             <div class="at-user-actions">
               <Show when={props.canRetry && props.onRetry}>
                 <IconButton
-                  label="Retry"
+                  label="Retry (same prompt, no branch)"
                   size="sm"
                   class="at-user-edit at-user-edit--always"
                   onClick={() => props.onRetry?.(props.item.id)}

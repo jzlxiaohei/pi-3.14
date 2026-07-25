@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0003
 ---
 
 # Workflow steps as subagents (independent sessions + role prompts)

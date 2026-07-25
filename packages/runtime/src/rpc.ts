@@ -196,8 +196,9 @@ export class RpcPiHost implements PiHost {
     return { cancelled: result.cancelled, selectedText: result.text };
   }
 
-  async inspectLive(): Promise<PiLiveInspectSnapshot> {
+  async inspectLive(_options?: { detail?: "summary" | "full" }): Promise<PiLiveInspectSnapshot> {
     this.assertAvailable();
+    void _options;
     throw new Error("inspectLive is not available on the RPC PI host");
   }
 
@@ -360,5 +361,21 @@ function messageRole(value: unknown): string | undefined {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  // Lazy import path avoided — keep rpc free of circulars; local format is enough.
+  return formatRpcError(error);
+}
+
+function formatRpcError(error: unknown): string {
+  if (error instanceof Error) {
+    const parts = [error.message];
+    let cause: unknown = (error as Error & { cause?: unknown }).cause;
+    let depth = 0;
+    while (cause instanceof Error && depth < 4) {
+      if (cause.message && !parts.includes(cause.message)) parts.push(cause.message);
+      cause = (cause as Error & { cause?: unknown }).cause;
+      depth += 1;
+    }
+    return parts.join("\n");
+  }
+  return String(error);
 }

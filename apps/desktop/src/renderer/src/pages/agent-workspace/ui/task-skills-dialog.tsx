@@ -46,7 +46,7 @@ export function TaskSkillsDialog(props: TaskSkillsDialogProps) {
     if (!options?.silent) setLoading(true);
     setError(null);
     try {
-      const inspect = await window.piDesktop.session.inspect();
+      const inspect = await window.piDesktop.session.inspect({ detail: "hud" });
       const skills = inspect.live?.skills ?? [];
       setLiveSkills(skills);
       const nextKnown = { ...knownSkills() };

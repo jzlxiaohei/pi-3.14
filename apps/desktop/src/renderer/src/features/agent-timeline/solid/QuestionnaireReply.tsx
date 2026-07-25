@@ -1,5 +1,6 @@
 import { Check, ChevronLeft, ChevronRight, ClipboardList } from "lucide-solid";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { Tooltip } from "@/shared/ui/tooltip";
 import type { Questionnaire } from "../core/questionnaire";
 import { MarkdownView } from "./markdown/MarkdownView";
 
@@ -29,9 +30,39 @@ export function QuestionnaireReply(props: QuestionnaireReplyProps) {
 
   createEffect(() => {
     props.id;
+    // Reset wizard when the assistant message changes. Do not pre-select
+    // `recommended` options — they are suggestions only (badge + sort), not answers.
     setCurrentIndex(0);
     setResponses({});
   });
+
+  /** One-click accept of agent recommendations for the current question only. */
+  function acceptRecommended() {
+    const question = currentQuestion();
+    const recommended = question.options
+      .filter((option) => option.recommended)
+      .map((option) => option.value);
+    if (recommended.length === 0) return;
+    if (question.type === "single_choice") {
+      setResponses((previous) => ({
+        ...previous,
+        [question.number]: { ...previous[question.number], choices: [recommended[0]!] },
+      }));
+      if (currentIndex() < props.questionnaire.questions.length - 1) {
+        setCurrentIndex((index) => index + 1);
+      }
+      return;
+    }
+    if (question.type === "multi_choice") {
+      setResponses((previous) => ({
+        ...previous,
+        [question.number]: { ...previous[question.number], choices: recommended },
+      }));
+    }
+  }
+
+  const currentHasRecommended = () =>
+    currentQuestion().options.some((option) => option.recommended);
 
   function choose(value: string) {
     const question = currentQuestion();
@@ -84,7 +115,7 @@ export function QuestionnaireReply(props: QuestionnaireReplyProps) {
         <span class="at-questionnaire__icon"><ClipboardList size={17} /></span>
         <div class="at-questionnaire__heading">
           <strong>{props.questionnaire.title ?? `需要你回答 ${props.questionnaire.questions.length} 个问题`}</strong>
-          <span>点击明确选项会自动进入下一题；有不同要求可补充说明</span>
+          <span>带「推荐」的是建议默认；需点选后才算回答</span>
         </div>
         <span class="at-questionnaire__count">已回答 {answeredCount()}/{props.questionnaire.questions.length}</span>
       </header>
@@ -132,6 +163,18 @@ export function QuestionnaireReply(props: QuestionnaireReplyProps) {
             role="group"
             aria-label={currentQuestion().type === "multi_choice" ? "快捷选项，可多选" : "快捷选项"}
           >
+            <Show when={currentHasRecommended()}>
+              <button
+                type="button"
+                class="at-questionnaire__accept-rec"
+                onClick={() => acceptRecommended()}
+              >
+                采用推荐
+                <Show when={currentQuestion().type === "multi_choice"}>
+                  <span>（本多选题全部推荐项）</span>
+                </Show>
+              </button>
+            </Show>
             <For each={currentQuestion().options}>
               {(option) => {
                 const selected = () =>
@@ -140,12 +183,24 @@ export function QuestionnaireReply(props: QuestionnaireReplyProps) {
                   <button
                     type="button"
                     class="at-questionnaire__option"
-                    classList={{ "at-questionnaire__option--selected": selected() }}
+                    classList={{
+                      "at-questionnaire__option--selected": selected(),
+                      "at-questionnaire__option--recommended": Boolean(option.recommended),
+                    }}
                     aria-pressed={selected()}
                     onClick={() => choose(option.value)}
                   >
-                    <strong>{option.value}</strong>
-                    <span>{option.label}</span>
+                    <Tooltip label={option.value} positioning="top" openDelay={250}>
+                      <strong class="at-questionnaire__option-value" title={option.value}>
+                        {option.value}
+                      </strong>
+                    </Tooltip>
+                    <span>
+                      {option.label}
+                      <Show when={option.recommended}>
+                        <em class="at-questionnaire__rec">推荐</em>
+                      </Show>
+                    </span>
                     <Show when={selected()} fallback={<ChevronRight size={15} />}>
                       <Check size={15} />
                     </Show>

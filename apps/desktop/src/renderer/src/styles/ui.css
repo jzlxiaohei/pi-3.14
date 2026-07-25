@@ -499,6 +499,14 @@
   flex-direction: column;
 }
 
+.orbit-dialog__content--role-prompt {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .confirm-dialog {
   display: flex;
   flex-direction: column;

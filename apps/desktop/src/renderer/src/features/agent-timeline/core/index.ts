@@ -3,13 +3,19 @@ export {
   applyHostState,
   applyTimelineSnapshot,
   applyTurnResult,
+  beginContinueOverlay,
   beginTurnOverlay,
   createInitialTimelineState,
   reduceTimelineEvent,
 } from "./reduce";
 export { formatJson } from "./tool-summary";
-export { parseQuestionnaire } from "./questionnaire";
-export type { Questionnaire, QuestionnaireOption, QuestionnaireQuestion } from "./questionnaire";
+export { parseQuestionnaire, viewAssistantQuestionnaire } from "./questionnaire";
+export type {
+  AssistantQuestionnaireView,
+  Questionnaire,
+  QuestionnaireOption,
+  QuestionnaireQuestion,
+} from "./questionnaire";
 export { buildTimelineViewEntries, timelineActivityLabel } from "./view-items";
 export type { TimelineViewEntry } from "./view-items";
 export type {

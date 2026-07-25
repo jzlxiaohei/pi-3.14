@@ -1,5 +1,6 @@
 import { createMemo, createSignal, onMount } from "solid-js";
 import type {
+  Agent,
   AppPreferences,
   WorkspacePreferences,
   WorkspaceTask,
@@ -16,7 +17,6 @@ export type TaskSummary = {
   time: string;
   title: string;
   cwd: string;
-  sessionPath: string | null;
 };
 
 export type TaskGroup = {
@@ -70,6 +70,8 @@ export function createWorkspaceModel() {
   const [tasks, setTasks] = createSignal<WorkspaceTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = createSignal<string | null>(null);
   const [activeTaskId, setActiveTaskId] = createSignal<string | null>(null);
+  /** Agents keyed by task id — used for nested sidebar when workflow is cleared. */
+  const [agentsByTaskId, setAgentsByTaskId] = createSignal<Record<string, Agent[]>>({});
   const [query, setQuery] = createSignal("");
   const [preferences, setPreferences] = createSignal<AppPreferences>(DEFAULT_PREFERENCES);
   const [workspacePreferences, setWorkspacePreferences] = createSignal<
@@ -82,12 +84,16 @@ export function createWorkspaceModel() {
     void window.piDesktop.tasks
       .bootstrap({ legacyPanelPreferences })
       .then((boot) => {
-        setTasks(boot.rootTasks);
-        setActiveTaskId(boot.activeTask?.id ?? null);
-        setSelectedTaskId(boot.activeRootTaskId);
+        setTasks(boot.tasks ?? boot.rootTasks);
+        setActiveTaskId(boot.activeTaskId ?? boot.activeTask?.id ?? null);
+        setSelectedTaskId(boot.activeTaskId ?? boot.activeRootTaskId ?? null);
         setPreferences(boot.appPreferences);
         setWorkspacePreferences(boot.workspacePreferences);
+        if (boot.agentsByTaskId) setAgentsByTaskId(boot.agentsByTaskId);
         if (boot.legacyBrowserPreferencesImported) clearLegacyPanelPreferences();
+        // Ensure nested rows for the restored selection (bootstrap may only ship active slice).
+        const selected = boot.activeTaskId ?? boot.activeRootTaskId;
+        if (selected) void refreshAgents(selected);
       })
       .finally(() => setBootstrapped(true));
   });
@@ -95,9 +101,6 @@ export function createWorkspaceModel() {
   const normalizedQuery = createMemo(() => query().trim().toLowerCase());
   const archivedCount = createMemo(
     () => tasks().filter((task) => typeof task.archivedAt === "number").length,
-  );
-  const activeCount = createMemo(
-    () => tasks().filter((task) => typeof task.archivedAt !== "number").length,
   );
   const filteredTasks = createMemo(() => {
     const search = normalizedQuery();
@@ -148,9 +151,26 @@ export function createWorkspaceModel() {
     void window.piDesktop.preferences.updateApp(patch);
   }
 
+  async function refreshAgents(taskId: string): Promise<Agent[]> {
+    try {
+      const agents = await window.piDesktop.agents.list(taskId);
+      setAgentsByTaskId((current) => ({ ...current, [taskId]: agents }));
+      return agents;
+    } catch {
+      return agentsByTaskId()[taskId] ?? [];
+    }
+  }
+
   return {
-    activeCount,
     activeTaskId,
+    agentsByTaskId,
+    agentsForTask(taskId: string): Agent[] {
+      return agentsByTaskId()[taskId] ?? [];
+    },
+    refreshAgents,
+    setAgentsForTask(taskId: string, agents: Agent[]) {
+      setAgentsByTaskId((current) => ({ ...current, [taskId]: agents }));
+    },
     archivedCount,
     bootstrapped,
     filteredTasks,
@@ -180,17 +200,15 @@ export function createWorkspaceModel() {
       if (nextActiveTaskId !== undefined) setActiveTaskId(nextActiveTaskId);
     },
     upsertTask(task: WorkspaceTask, select = true, _moveToFront = false) {
-      if (task.parentTaskId === null) {
-        setTasks((current) => {
-          const index = current.findIndex((item) => item.id === task.id);
-          if (index < 0) return [task, ...current];
-          const next = current.slice();
-          next[index] = task;
-          return next;
-        });
-      }
+      setTasks((current) => {
+        const index = current.findIndex((item) => item.id === task.id);
+        if (index < 0) return [task, ...current];
+        const next = current.slice();
+        next[index] = task;
+        return next;
+      });
       setActiveTaskId(task.id);
-      if (select) setSelectedTaskId(task.rootTaskId);
+      if (select) setSelectedTaskId(task.id);
     },
     selectTaskLocal(id: string | null) {
       setSelectedTaskId(id);
@@ -248,7 +266,6 @@ export function toSummary(task: WorkspaceTask): TaskSummary {
     title: task.title,
     repo: task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? task.cwd,
     cwd: task.cwd,
-    sessionPath: task.sessionPath,
     status: task.status,
     time: formatRelative(task.updatedAt),
   };

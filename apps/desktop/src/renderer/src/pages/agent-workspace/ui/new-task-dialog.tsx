@@ -1,20 +1,32 @@
 import { Route, X } from "lucide-solid";
-import { For } from "solid-js";
-import type { TaskPlaybookId } from "../../../../../shared/desktop-contracts";
+import { For, Show, createEffect, createSignal } from "solid-js";
+import type { PlaybookTemplate } from "../../../../../shared/desktop-contracts";
 import { Button } from "@/shared/ui/button";
 import { Dialog } from "@/shared/ui/dialog";
 import { IconButton } from "@/shared/ui/icon-button";
-import { PLAYBOOKS } from "../workflow/playbooks";
 
 type NewTaskDialogProps = {
   open: boolean;
   disabled?: boolean;
   onOpenChange: (open: boolean) => void;
   /** `null` = skip playbook (free chat). */
-  onConfirm: (playbookId: TaskPlaybookId | null) => void | Promise<void>;
+  onConfirm: (playbookId: string | null) => void | Promise<void>;
 };
 
 export function NewTaskDialog(props: NewTaskDialogProps) {
+  const [playbooks, setPlaybooks] = createSignal<PlaybookTemplate[]>([]);
+  const [loading, setLoading] = createSignal(false);
+
+  createEffect(() => {
+    if (!props.open) return;
+    setLoading(true);
+    void window.piDesktop.playbooks
+      .list()
+      .then(setPlaybooks)
+      .catch(() => setPlaybooks([]))
+      .finally(() => setLoading(false));
+  });
+
   return (
     <Dialog
       class="orbit-dialog__content--compact"
@@ -35,28 +47,35 @@ export function NewTaskDialog(props: NewTaskDialogProps) {
           </IconButton>
         </header>
         <div class="confirm-dialog__body">
-          <p>选一条工程路径，或跳过直接自由 chat。路径会定下初始走向（第一步 starter）。</p>
+          <p>选一条工程路径，或跳过直接自由 chat。路径来自「路径模板」库，可自定义步骤与 Agent Template。</p>
           <div class="new-task-paths">
-            <For each={PLAYBOOKS}>
+            <Show when={loading()}>
+              <p class="confirm-dialog__note">加载路径…</p>
+            </Show>
+            <For each={playbooks()}>
               {(playbook) => (
                 <button
                   type="button"
                   class="new-task-paths__item"
-                  disabled={props.disabled}
+                  disabled={props.disabled || loading()}
                   onClick={() => void props.onConfirm(playbook.id)}
                 >
                   <Route size={14} />
                   <span>
-                    <strong>{playbook.title}</strong>
-                    <small>{playbook.description}</small>
+                    <strong>{playbook.name}</strong>
+                    <small>
+                      {playbook.description || `${playbook.steps.length} 步`}
+                    </small>
                   </span>
                 </button>
               )}
             </For>
+            <Show when={!loading() && playbooks().length === 0}>
+              <p class="confirm-dialog__note">还没有路径模板。请先在左侧 Rail「Paths」中创建或等待系统种子加载。</p>
+            </Show>
           </div>
           <p class="confirm-dialog__note">
-            Slash starter 依赖项目 <code>.pi/skills</code>。Skills 安装与管理将在独立 Skills
-            页完成，不在 chat 顶栏。
+            Starter 依赖项目 skills（建议用法）。Agent Role Prompt 在各自 Agent Template 中维护。
           </p>
         </div>
         <footer class="confirm-dialog__footer">

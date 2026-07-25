@@ -32,8 +32,11 @@ export type SkillPolicy = {
   ignoredSkillNames: string[];
 };
 
-/** Matt engineering playbooks (first slice: three paths). */
-export type TaskPlaybookId = "feature-default" | "small-tdd" | "bugfix";
+/**
+ * Playbook Template id (system seeds: feature-default | small-tdd | bugfix;
+ * user rows: UUID). Open string for catalog-backed playbooks (ADR-0007).
+ */
+export type TaskPlaybookId = string;
 
 export type TaskWorkflowStepStatus = "pending" | "active" | "done" | "skipped";
 
@@ -42,13 +45,14 @@ export type TaskWorkflowStep = {
   status: TaskWorkflowStepStatus;
   /**
    * Agent Template this step binds (business binding).
-   * Stamped from the playbook catalog at Task create; overridable per Task.
-   * `ensureStepAgent` snapshots this id — not a parallel code map.
-   * Older catalogs may omit it; readers backfill from the playbook catalog.
+   * Stamped from the Playbook Template at Task create.
+   * `ensureStepAgent` snapshots this id.
    */
   templateId?: string;
-  /** Composer prefill when entering the step (stamped from catalog). */
+  /** Composer prefill when entering the step (stamped from playbook). */
   starterPrompt?: string;
+  /** Display label stamped from playbook (survives catalog edits). */
+  label?: string;
   /** Bound Agent for this step’s PI Session (lazy on first open/advance). */
   agentId?: string;
 };
@@ -60,6 +64,55 @@ export type TaskWorkflow = {
   stepId: string;
   steps: TaskWorkflowStep[];
 };
+
+/** Provenance for playbook path definitions (parallel to AgentTemplateSource). */
+export type PlaybookTemplateSource = "system" | "user";
+
+/** One step inside a Playbook Template definition. */
+export type PlaybookTemplateStep = {
+  id: string;
+  label: string;
+  blurb: string;
+  /** Agent Template used when this step is ensured. */
+  agentTemplateId: string;
+  /** Suggested first message / skill invocation for the step. */
+  starterPrompt: string;
+};
+
+/**
+ * Reusable multi-step path definition (ADR-0007).
+ * Edited in Playbook admin — not on the live Task workflow card.
+ */
+export type PlaybookTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  source: PlaybookTemplateSource;
+  steps: PlaybookTemplateStep[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type PlaybookTemplateCreateRequest = {
+  name: string;
+  description?: string;
+  steps?: PlaybookTemplateStep[];
+};
+
+export type PlaybookTemplateUpdateRequest = {
+  id: string;
+  name?: string;
+  description?: string;
+  steps?: PlaybookTemplateStep[];
+};
+
+export type PlaybookTemplateDeleteResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string };
+
+export type PlaybookTemplateResetResult =
+  | { ok: true; playbook: PlaybookTemplate }
+  | { ok: false; error: string };
 
 /** User-facing work unit. Never owns a PI Session. */
 export type Task = {

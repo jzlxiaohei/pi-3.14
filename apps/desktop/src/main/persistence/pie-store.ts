@@ -13,6 +13,13 @@ import type {
   AppPreferences,
   AppPreferencesUpdate,
   LegacyPanelPreferences,
+  PlaybookTemplate,
+  PlaybookTemplateCreateRequest,
+  PlaybookTemplateDeleteResult,
+  PlaybookTemplateResetResult,
+  PlaybookTemplateSource,
+  PlaybookTemplateStep,
+  PlaybookTemplateUpdateRequest,
   ReviewedFileUpdate,
   ReviewedFilesRequest,
   SkillPolicy,
@@ -23,6 +30,10 @@ import type {
   WorkspacePreferencesUpdate,
   WorkspaceTaskMoveRequest,
 } from "../../shared/desktop-contracts";
+import {
+  SYSTEM_PLAYBOOK_SEEDS,
+  normalizePlaybookSteps,
+} from "../../shared/playbook-catalog";
 import { SYSTEM_TEMPLATE_SEEDS } from "../../shared/playbook-templates";
 import { rollupTaskStatus } from "../../shared/task-status";
 import { parseSkillPolicy, parseWorkflow, uniqueStrings } from "./codecs";
@@ -74,6 +85,16 @@ type TemplateRow = {
   system_prompt: string;
   skill_policy_json: string;
   source: AgentTemplateSource;
+  created_at: number;
+  updated_at: number;
+};
+
+type PlaybookRow = {
+  id: string;
+  name: string;
+  description: string;
+  steps_json: string;
+  source: PlaybookTemplateSource;
   created_at: number;
   updated_at: number;
 };
@@ -345,6 +366,114 @@ export class PieStore {
     const template = await this.getTemplate(id);
     if (!template) return { ok: false, error: "恢复出厂失败" };
     return { ok: true, template };
+  }
+
+  async listPlaybooks(): Promise<PlaybookTemplate[]> {
+    const rows = this.database
+      .prepare("SELECT * FROM playbook_templates")
+      .all() as unknown as PlaybookRow[];
+    return rows
+      .map((row) => this.toPlaybook(row))
+      .sort((left, right) => {
+        if (left.source !== right.source) {
+          return left.source === "system" ? -1 : 1;
+        }
+        const byName = left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+        return byName || left.id.localeCompare(right.id);
+      });
+  }
+
+  async getPlaybook(id: string): Promise<PlaybookTemplate | null> {
+    const row = this.database.prepare("SELECT * FROM playbook_templates WHERE id = ?").get(id) as
+      | PlaybookRow
+      | undefined;
+    return row ? this.toPlaybook(row) : null;
+  }
+
+  async createPlaybook(input: PlaybookTemplateCreateRequest): Promise<PlaybookTemplate> {
+    const name = input.name.trim();
+    if (!name) throw new Error("路径名称不能为空");
+    const steps = normalizePlaybookSteps(input.steps);
+    for (const step of steps) {
+      if (!step.agentTemplateId) throw new Error(`步骤「${step.label}」未选择 Agent Template`);
+    }
+    const now = Date.now();
+    const id = randomUUID();
+    const description = (input.description ?? "").trim();
+    this.database
+      .prepare(
+        `INSERT INTO playbook_templates(
+          id, name, description, steps_json, source, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'user', ?, ?)`,
+      )
+      .run(id, name, description, JSON.stringify(steps), now, now);
+    const created = await this.getPlaybook(id);
+    if (!created) throw new Error("创建路径失败");
+    return created;
+  }
+
+  async updatePlaybook(input: PlaybookTemplateUpdateRequest): Promise<PlaybookTemplate | null> {
+    const existing = await this.getPlaybook(input.id);
+    if (!existing) return null;
+    const name = input.name !== undefined ? input.name.trim() : existing.name;
+    if (!name) throw new Error("路径名称不能为空");
+    const description =
+      input.description !== undefined ? input.description.trim() : existing.description;
+    const steps =
+      input.steps !== undefined ? normalizePlaybookSteps(input.steps) : existing.steps;
+    for (const step of steps) {
+      if (!step.agentTemplateId) throw new Error(`步骤「${step.label}」未选择 Agent Template`);
+    }
+    const now = Date.now();
+    this.database
+      .prepare(
+        `UPDATE playbook_templates
+         SET name = ?, description = ?, steps_json = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(name, description, JSON.stringify(steps), now, input.id);
+    return this.getPlaybook(input.id);
+  }
+
+  async deletePlaybook(id: string): Promise<PlaybookTemplateDeleteResult> {
+    const existing = await this.getPlaybook(id);
+    if (!existing) return { ok: false, error: "路径不存在" };
+    if (existing.source === "system") {
+      return { ok: false, error: "系统路径不可删除" };
+    }
+    this.database.prepare("DELETE FROM playbook_templates WHERE id = ?").run(id);
+    return { ok: true, id };
+  }
+
+  async duplicatePlaybook(id: string): Promise<PlaybookTemplate | null> {
+    const existing = await this.getPlaybook(id);
+    if (!existing) return null;
+    return this.createPlaybook({
+      name: `${existing.name} 的副本`,
+      description: existing.description,
+      steps: existing.steps,
+    });
+  }
+
+  async resetPlaybookFactory(id: string): Promise<PlaybookTemplateResetResult> {
+    const existing = await this.getPlaybook(id);
+    if (!existing) return { ok: false, error: "路径不存在" };
+    if (existing.source !== "system") {
+      return { ok: false, error: "仅系统路径可恢复出厂" };
+    }
+    const seed = SYSTEM_PLAYBOOK_SEEDS.find((item) => item.id === id);
+    if (!seed) return { ok: false, error: "找不到出厂种子" };
+    const now = Date.now();
+    this.database
+      .prepare(
+        `UPDATE playbook_templates
+         SET name = ?, description = ?, steps_json = ?, updated_at = ?
+         WHERE id = ? AND source = 'system'`,
+      )
+      .run(seed.name, seed.description, JSON.stringify(seed.steps), now, id);
+    const playbook = await this.getPlaybook(id);
+    if (!playbook) return { ok: false, error: "恢复出厂失败" };
+    return { ok: true, playbook };
   }
 
   getActiveTaskIdSync(): string | null {
@@ -894,6 +1023,28 @@ export class PieStore {
       systemPrompt: row.system_prompt,
       skillPolicy: parseSkillPolicy(row.skill_policy_json),
       source,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private toPlaybook(row: PlaybookRow): PlaybookTemplate {
+    const source: PlaybookTemplateSource = row.source === "user" ? "user" : "system";
+    let steps: PlaybookTemplateStep[] = [];
+    try {
+      const parsed = JSON.parse(row.steps_json) as unknown;
+      if (Array.isArray(parsed)) {
+        steps = normalizePlaybookSteps(parsed as PlaybookTemplateStep[]);
+      }
+    } catch {
+      steps = normalizePlaybookSteps(undefined);
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description ?? "",
+      source,
+      steps,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

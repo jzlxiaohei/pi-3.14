@@ -37,22 +37,55 @@ export function createWorkflow(playbookId: TaskPlaybookId): TaskWorkflow {
 }
 
 export function workflowView(workflow: TaskWorkflow) {
-  const playbook = getPlaybook(workflow.playbookId);
-  const stepIndex = playbook.steps.findIndex((step) => step.id === workflow.stepId);
-  const stepDef = stepIndex >= 0 ? playbook.steps[stepIndex]! : playbook.steps[0]!;
-  const bound = workflow.steps.find((s) => s.id === stepDef.id);
+  // Prefer stamped instance steps; fall back to code catalog for legacy system ids.
+  let playbook: PlaybookDef;
+  try {
+    playbook = getPlaybook(workflow.playbookId);
+  } catch {
+    playbook = {
+      id: workflow.playbookId,
+      title: workflow.playbookId,
+      description: "",
+      steps: workflow.steps.map((s) => ({
+        id: s.id,
+        label: s.label ?? s.id,
+        blurb: "",
+        templateId: s.templateId ?? "",
+        agentTemplateId: s.templateId ?? "",
+        starterPrompt: s.starterPrompt ?? "",
+      })),
+    };
+  }
+  const stepIndex = Math.max(
+    0,
+    workflow.steps.findIndex((step) => step.id === workflow.stepId),
+  );
+  const bound = workflow.steps[stepIndex] ?? workflow.steps[0];
+  const catalogStep =
+    playbook.steps.find((s) => s.id === bound?.id) ?? playbook.steps[stepIndex] ?? playbook.steps[0];
+  const stepDef: PlaybookStepDef = {
+    id: bound?.id ?? catalogStep?.id ?? "step",
+    label: bound?.label ?? catalogStep?.label ?? bound?.id ?? "step",
+    blurb: catalogStep?.blurb ?? "",
+    templateId: bound?.templateId ?? catalogStep?.agentTemplateId ?? "",
+    agentTemplateId: bound?.templateId ?? catalogStep?.agentTemplateId ?? "",
+    starterPrompt: bound?.starterPrompt ?? catalogStep?.starterPrompt ?? "",
+  };
   const completed = workflow.steps.every(
     (step) => step.status === "done" || step.status === "skipped",
   );
+  const stepCount = Math.max(workflow.steps.length, playbook.steps.length, 1);
   return {
-    playbook,
+    playbook: {
+      ...playbook,
+      title: playbook.title || workflow.playbookId,
+    },
     stepDef,
-    /** Instance binding (may differ from catalog after per-task rebind). */
-    stepTemplateId: bound?.templateId ?? stepDef.templateId,
-    stepStarter: bound?.starterPrompt ?? stepDef.starterPrompt,
-    stepIndex: Math.max(0, stepIndex),
-    stepCount: playbook.steps.length,
-    isLast: stepIndex >= playbook.steps.length - 1,
+    stepTemplateId: stepDef.agentTemplateId,
+    stepStarter: stepDef.starterPrompt,
+    stepIndex,
+    stepCount,
+    isLast: stepIndex >= stepCount - 1,
     completed,
   };
 }

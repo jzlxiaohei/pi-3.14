@@ -13,6 +13,7 @@ test("createWorkflowFromPlaybook stamps templateId on every step", () => {
   assert.equal(workflow.steps[0]!.templateId, "tpl:feature-default/grilling");
   assert.equal(workflow.steps[1]!.templateId, "tpl:feature-default/to-spec");
   assert.equal(workflow.steps[2]!.templateId, "tpl:feature-default/implement");
+  assert.equal(workflow.steps[0]!.label, "grill-with-docs");
   assert.ok(workflow.steps[0]!.starterPrompt?.includes("/grill-with-docs"));
 });
 

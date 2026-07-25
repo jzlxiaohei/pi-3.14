@@ -1364,6 +1364,40 @@ body[data-panel-resizing] .chat-gutter {
   line-height: 1.45;
 }
 
+/* Playbook admin step cards (reuses templates-page shell). */
+.playbook-step-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  margin-bottom: var(--space-3);
+}
+
+.playbook-step-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.playbook-step-card__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.playbook-step-card .templates-field select {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font: inherit;
+  padding: 10px 12px;
+}
+
 /* Provenance only — path structure is edited on Playbook Template admin. */
 .workflow-steps__provenance {
   display: flex;

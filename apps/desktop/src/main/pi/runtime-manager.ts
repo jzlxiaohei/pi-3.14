@@ -61,6 +61,7 @@ import {
 import {
   buildHandoffPrefill,
   createWorkflowFromPlaybook,
+  createWorkflowFromPlaybookTemplate,
   resolveStepStarter,
   resolveStepTemplateId,
 } from "../../shared/playbook-catalog";
@@ -196,9 +197,13 @@ export class PiRuntimeManager {
       if (!existing) throw new Error(`Unknown task: ${options.taskId}`);
       task = existing;
     } else {
-      const workflow = options.playbookId
-        ? createWorkflowFromPlaybook(options.playbookId)
-        : null;
+      let workflow = null;
+      if (options.playbookId) {
+        const playbook = await this.tasks.getPlaybook(options.playbookId);
+        workflow = playbook
+          ? createWorkflowFromPlaybookTemplate(playbook)
+          : createWorkflowFromPlaybook(options.playbookId);
+      }
       task = await this.tasks.createTask({
         cwd,
         title: options.title?.trim() || folderTitle(cwd),
@@ -1130,6 +1135,34 @@ export class PiRuntimeManager {
 
   async resetTemplateFactory(id: string) {
     return this.tasks.resetTemplateFactory(id);
+  }
+
+  async listPlaybooks() {
+    return this.tasks.listPlaybooks();
+  }
+
+  async getPlaybook(id: string) {
+    return this.tasks.getPlaybook(id);
+  }
+
+  async createPlaybook(request: import("../../shared/desktop-contracts").PlaybookTemplateCreateRequest) {
+    return this.tasks.createPlaybook(request);
+  }
+
+  async updatePlaybook(request: import("../../shared/desktop-contracts").PlaybookTemplateUpdateRequest) {
+    return this.tasks.updatePlaybook(request);
+  }
+
+  async deletePlaybook(id: string) {
+    return this.tasks.deletePlaybook(id);
+  }
+
+  async duplicatePlaybook(id: string) {
+    return this.tasks.duplicatePlaybook(id);
+  }
+
+  async resetPlaybookFactory(id: string) {
+    return this.tasks.resetPlaybookFactory(id);
   }
 
   async moveTask(request: import("../../shared/desktop-contracts").WorkspaceTaskMoveRequest) {

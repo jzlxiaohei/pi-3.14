@@ -11,7 +11,6 @@ import type { ProviderQuotaOk, ProviderQuotaSnapshot, QuotaWindow } from "@pi-3.
 import { resolveUsageProviderId, selectQuotasForModel } from "@pi-3.14/usage";
 import { createEffect, createMemo, createSignal, onCleanup, Show, untrack } from "solid-js";
 import type {
-  TaskPlaybookId,
   TaskWorkflow,
   WorkspaceGitSnapshot,
 } from "../../../../../shared/desktop-contracts";
@@ -49,6 +48,7 @@ import { PanelResizeHandle } from "./panel-resize-handle";
 import { Rail, type MainView } from "./rail";
 import { TemplatesPage } from "../../agent-templates/ui/page";
 import type { TemplatesModel } from "../../agent-templates/model";
+import { PlaybooksPage } from "../../agent-playbooks/ui/page";
 import { TaskHeader } from "./task-header";
 import { TaskSkillsDialog } from "./task-skills-dialog";
 import { TaskSidebar } from "./task-sidebar";
@@ -285,10 +285,19 @@ export function AppShell(props: AppShellProps) {
 
   function goWorkspace(): void {
     setMainView("workspace");
-    // Restore task sidebar if we collapsed it for Templates.
+    // Restore task sidebar if we collapsed it for Templates / Playbooks.
     if (!props.model.tasksOpen() && tasksOpenBeforeTemplates()) {
       props.model.setTasksOpen(true);
     }
+  }
+
+  function enterAdminView(view: "templates" | "playbooks"): void {
+    if (mainView() === view) return;
+    if (mainView() === "workspace") {
+      setTasksOpenBeforeTemplates(props.model.tasksOpen());
+      if (props.model.tasksOpen()) props.model.setTasksOpen(false);
+    }
+    setMainView(view);
   }
 
   function requestTemplates(focusTemplateId?: string): void {
@@ -301,9 +310,11 @@ export function AppShell(props: AppShellProps) {
       }
       return;
     }
-    setTasksOpenBeforeTemplates(props.model.tasksOpen());
-    if (props.model.tasksOpen()) props.model.setTasksOpen(false);
-    setMainView("templates");
+    enterAdminView("templates");
+  }
+
+  function requestPlaybooks(): void {
+    enterAdminView("playbooks");
   }
 
   function onTemplatesModelReady(model: TemplatesModel): void {
@@ -324,6 +335,10 @@ export function AppShell(props: AppShellProps) {
       goWorkspace();
       return;
     }
+    if (mainView() === "playbooks") {
+      goWorkspace();
+      return;
+    }
     props.model.setTasksOpen(!tasksOpen());
   }
 
@@ -334,15 +349,28 @@ export function AppShell(props: AppShellProps) {
     goWorkspace();
   }
 
-  async function confirmNewTask(playbookId: TaskPlaybookId | null): Promise<void> {
+  async function confirmNewTask(playbookId: string | null): Promise<void> {
     setNewTaskOpen(false);
     // Task shell + first Agent Session (playbook or ad-hoc) via main facade.
     await props.session.createNewTask(
       playbookId ? { playbookId } : undefined,
     );
-    if (playbookId) {
-      const first = getPlaybook(playbookId).steps[0]!;
-      props.session.prefillDraft(first.starterPrompt);
+    if (!playbookId) return;
+    // Prefer starter stamped on the new Task workflow.
+    const workflow = props.model.selectedWorkspaceTask()?.workflow;
+    const stamped =
+      workflow?.steps.find((s) => s.id === workflow.stepId)?.starterPrompt ??
+      workflow?.steps[0]?.starterPrompt;
+    if (stamped?.trim()) {
+      props.session.prefillDraft(stamped);
+      return;
+    }
+    try {
+      const pb = await window.piDesktop.playbooks.get(playbookId);
+      const starter = pb?.steps[0]?.starterPrompt;
+      if (starter?.trim()) props.session.prefillDraft(starter);
+    } catch {
+      /* no prefill */
     }
   }
 
@@ -632,6 +660,7 @@ export function AppShell(props: AppShellProps) {
   }
 
   const [rolePromptConfirming, setRolePromptConfirming] = createSignal(false);
+  const [rolePromptEditorOpen, setRolePromptEditorOpen] = createSignal(false);
 
   async function confirmRolePrompt(): Promise<void> {
     const agent = props.session.activeAgent();
@@ -654,15 +683,12 @@ export function AppShell(props: AppShellProps) {
     }
   }
 
-  /** Close inspector so the chat-right Role Prompt panel is visible, then focus it. */
-  function focusRolePromptEditor(): void {
+  /** Open Role Prompt editor dialog (from confirmation banner). */
+  function openRolePromptEditor(): void {
     if (inspectorOpen()) {
       props.model.setInspectorOpen(false);
     }
-    queueMicrotask(() => {
-      const el = document.querySelector<HTMLTextAreaElement>(".role-prompt-panel__textarea");
-      el?.focus();
-    });
+    setRolePromptEditorOpen(true);
   }
 
   async function onRolePromptSaved(): Promise<void> {
@@ -727,11 +753,17 @@ export function AppShell(props: AppShellProps) {
             mainView={mainView()}
             tasksOpen={tasksOpen()}
             onSelectTasks={requestTasksFromRail}
-            onSelectTemplates={requestTemplates}
+            onSelectTemplates={() => requestTemplates()}
+            onSelectPlaybooks={requestPlaybooks}
           />
           <Show when={mainView() === "templates"}>
             <div class="templates-shell">
               <TemplatesPage onModelReady={onTemplatesModelReady} />
+            </div>
+          </Show>
+          <Show when={mainView() === "playbooks"}>
+            <div class="templates-shell">
+              <PlaybooksPage />
             </div>
           </Show>
           <Show when={mainView() === "workspace"}>
@@ -810,7 +842,7 @@ export function AppShell(props: AppShellProps) {
                 ready={props.session.isReady() && !props.session.unavailableTask()}
                 confirming={rolePromptConfirming()}
                 onConfirm={() => void confirmRolePrompt()}
-                onEditRolePrompt={focusRolePromptEditor}
+                onEditRolePrompt={openRolePromptEditor}
               />
               <ToolApprovalBanner
                 request={props.session.approval()}
@@ -1027,6 +1059,8 @@ export function AppShell(props: AppShellProps) {
                     rolePromptDisabled={
                       props.session.isCreatingSession() || Boolean(props.session.unavailableTask())
                     }
+                    rolePromptEditorOpen={rolePromptEditorOpen()}
+                    onRolePromptEditorOpenChange={setRolePromptEditorOpen}
                     onAgentUpdated={(agent) => props.session.setActiveAgentLocal(agent)}
                     onRolePromptSaved={() => void onRolePromptSaved()}
                     onReviewChanges={() => openReview()}

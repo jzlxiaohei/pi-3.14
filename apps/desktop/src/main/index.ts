@@ -402,6 +402,16 @@ app.whenReady().then(() => {
     piRuntime.resetTemplateFactory(id),
   );
 
+  ipcMain.handle("pi:playbooks:list", () => piRuntime.listPlaybooks());
+  ipcMain.handle("pi:playbooks:get", (_event, id: string) => piRuntime.getPlaybook(id));
+  ipcMain.handle("pi:playbooks:create", (_event, request) => piRuntime.createPlaybook(request));
+  ipcMain.handle("pi:playbooks:update", (_event, request) => piRuntime.updatePlaybook(request));
+  ipcMain.handle("pi:playbooks:delete", (_event, id: string) => piRuntime.deletePlaybook(id));
+  ipcMain.handle("pi:playbooks:duplicate", (_event, id: string) => piRuntime.duplicatePlaybook(id));
+  ipcMain.handle("pi:playbooks:reset-factory", (_event, id: string) =>
+    piRuntime.resetPlaybookFactory(id),
+  );
+
   ipcMain.handle("preferences:update-app", (_event, patch: AppPreferencesUpdate) => {
     return pieStore!.updateAppPreferences(patch);
   });

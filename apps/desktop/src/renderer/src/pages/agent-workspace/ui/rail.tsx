@@ -1,21 +1,23 @@
-import { LayoutTemplate, ListTodo, Command } from "lucide-solid";
+import { LayoutTemplate, ListTodo, Command, Route } from "lucide-solid";
 import { Tooltip } from "@/shared/ui/tooltip";
 
-export type MainView = "workspace" | "templates";
+export type MainView = "workspace" | "templates" | "playbooks";
 
 type RailProps = {
   mainView: MainView;
   tasksOpen: boolean;
   onSelectTasks: () => void;
   onSelectTemplates: () => void;
+  onSelectPlaybooks: () => void;
 };
 
 /**
- * Product-level nav: Tasks (workspace + task list) and Templates (library admin).
+ * Product-level nav: Tasks, Agent Templates, Playbook (path) Templates.
  */
 export function Rail(props: RailProps) {
   const tasksActive = () => props.mainView === "workspace";
   const templatesActive = () => props.mainView === "templates";
+  const playbooksActive = () => props.mainView === "playbooks";
   const tasksLabel = () =>
     props.mainView === "workspace"
       ? props.tasksOpen
@@ -42,17 +44,30 @@ export function Rail(props: RailProps) {
             <span class="rail-item__label">Tasks</span>
           </button>
         </Tooltip>
-        <Tooltip label="模板库">
+        <Tooltip label="Agent 模板库">
           <button
             type="button"
             class="rail-item"
             data-active={templatesActive() ? "true" : undefined}
-            aria-label="模板库"
+            aria-label="Agent 模板库"
             aria-pressed={templatesActive()}
             onClick={props.onSelectTemplates}
           >
             <LayoutTemplate size={21} strokeWidth={2.2} />
             <span class="rail-item__label">Templates</span>
+          </button>
+        </Tooltip>
+        <Tooltip label="路径模板（Playbook）">
+          <button
+            type="button"
+            class="rail-item"
+            data-active={playbooksActive() ? "true" : undefined}
+            aria-label="路径模板"
+            aria-pressed={playbooksActive()}
+            onClick={props.onSelectPlaybooks}
+          >
+            <Route size={21} strokeWidth={2.2} />
+            <span class="rail-item__label">Paths</span>
           </button>
         </Tooltip>
       </nav>

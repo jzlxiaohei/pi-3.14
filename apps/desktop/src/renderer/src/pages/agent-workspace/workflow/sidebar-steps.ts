@@ -26,31 +26,41 @@ export function workflowSidebarSteps(
 ): WorkflowSidebarStepRow[] {
   if (!workflow) return [];
 
-  let playbook;
-  try {
-    playbook = getPlaybook(workflow.playbookId);
-  } catch {
-    return [];
-  }
-
   const byId = new Map(workflow.steps.map((step) => [step.id, step]));
 
-  return playbook.steps.map((def) => {
-    const bound = byId.get(def.id);
+  const rowFromBound = (
+    stepId: string,
+    label: string,
+    templateId: string | undefined,
+  ): WorkflowSidebarStepRow => {
+    const bound = byId.get(stepId);
     const agentId = bound?.agentId;
     const hasAgent = typeof agentId === "string" && agentId.length > 0;
     const status = bound?.status;
-    const templateId = bound?.templateId ?? def.templateId;
     return {
-      stepId: def.id,
-      label: def.label,
-      templateId,
+      stepId,
+      label: bound?.label?.trim() || label,
+      ...(templateId || bound?.templateId
+        ? { templateId: bound?.templateId ?? templateId }
+        : {}),
       ...(hasAgent ? { agentId } : {}),
       clickable: hasAgent,
       checked: status === "done" || status === "skipped",
       open: Boolean(hasAgent && activeAgentId && agentId === activeAgentId),
     };
-  });
+  };
+
+  // System catalog order when known; otherwise instance stamp order (user playbooks).
+  try {
+    const playbook = getPlaybook(workflow.playbookId);
+    return playbook.steps.map((def) =>
+      rowFromBound(def.id, def.label, def.agentTemplateId),
+    );
+  } catch {
+    return workflow.steps.map((bound) =>
+      rowFromBound(bound.id, bound.label ?? bound.id, bound.templateId),
+    );
+  }
 }
 
 /**

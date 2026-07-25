@@ -1,9 +1,10 @@
 import type { PieDatabase } from "./database";
 import { transaction } from "./database";
+import { SYSTEM_PLAYBOOK_SEEDS } from "../../shared/playbook-catalog";
 import { SYSTEM_TEMPLATE_SEEDS } from "../../shared/playbook-templates";
 
-/** Schema version: v2 Task/Agent/Template split; v3 Role Prompt confirmation; v4 template admin. */
-export const CURRENT_VERSION = 4;
+/** Schema version: … v4 template admin; v5 playbook templates. */
+export const CURRENT_VERSION = 5;
 
 export function readSchemaVersion(database: PieDatabase): number {
   try {
@@ -80,7 +81,32 @@ export function runMigrations(database: PieDatabase, now = Date.now): void {
     });
   }
 
+  // Additive v5: playbook path definitions (ADR-0007).
+  versions = database
+    .prepare("SELECT version FROM schema_migrations ORDER BY version")
+    .all()
+    .map((row) => Number((row as { version: number }).version));
+  if (!versions.includes(5)) {
+    transaction(database, () => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS playbook_templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          steps_json TEXT NOT NULL CHECK (json_valid(steps_json)),
+          source TEXT NOT NULL CHECK (source IN ('system', 'user')),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      `);
+      database
+        .prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+        .run(5, now());
+    });
+  }
+
   seedSystemTemplates(database, now);
+  seedSystemPlaybooks(database, now);
 }
 
 /**
@@ -121,7 +147,7 @@ function migrateAgentTemplatesV4(database: PieDatabase): void {
   database.exec(`PRAGMA foreign_keys = ON;`);
 }
 
-/** Idempotent insert of missing system playbook templates. Never overwrites existing rows. */
+/** Idempotent insert of missing system agent templates. Never overwrites existing rows. */
 export function seedSystemTemplates(database: PieDatabase, now = Date.now): void {
   const ts = now();
   const insert = database.prepare(`
@@ -137,6 +163,29 @@ export function seedSystemTemplates(database: PieDatabase, now = Date.now): void
         seed.name,
         seed.systemPrompt,
         JSON.stringify(seed.skillPolicy),
+        ts,
+        ts,
+      );
+    }
+  });
+}
+
+/** Idempotent insert of missing system playbook paths. Never overwrites existing rows. */
+export function seedSystemPlaybooks(database: PieDatabase, now = Date.now): void {
+  const ts = now();
+  const insert = database.prepare(`
+    INSERT INTO playbook_templates(
+      id, name, description, steps_json, source, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'system', ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `);
+  transaction(database, () => {
+    for (const seed of SYSTEM_PLAYBOOK_SEEDS) {
+      insert.run(
+        seed.id,
+        seed.name,
+        seed.description,
+        JSON.stringify(seed.steps),
         ts,
         ts,
       );

@@ -146,6 +146,36 @@ const api = {
         import("../shared/desktop-contracts").AgentTemplateResetResult
       >,
   },
+  playbooks: {
+    list: () =>
+      ipcRenderer.invoke("pi:playbooks:list") as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplate[]
+      >,
+    get: (id: string) =>
+      ipcRenderer.invoke("pi:playbooks:get", id) as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplate | null
+      >,
+    create: (request: import("../shared/desktop-contracts").PlaybookTemplateCreateRequest) =>
+      ipcRenderer.invoke("pi:playbooks:create", request) as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplate
+      >,
+    update: (request: import("../shared/desktop-contracts").PlaybookTemplateUpdateRequest) =>
+      ipcRenderer.invoke("pi:playbooks:update", request) as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplate | null
+      >,
+    delete: (id: string) =>
+      ipcRenderer.invoke("pi:playbooks:delete", id) as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplateDeleteResult
+      >,
+    duplicate: (id: string) =>
+      ipcRenderer.invoke("pi:playbooks:duplicate", id) as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplate | null
+      >,
+    resetFactory: (id: string) =>
+      ipcRenderer.invoke("pi:playbooks:reset-factory", id) as Promise<
+        import("../shared/desktop-contracts").PlaybookTemplateResetResult
+      >,
+  },
   session: {
     abort: (options?: { agentId?: string }) =>
       ipcRenderer.invoke("pi:session:abort", options) as Promise<void>,

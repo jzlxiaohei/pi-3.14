@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Playbook Template as a first-class catalog entity

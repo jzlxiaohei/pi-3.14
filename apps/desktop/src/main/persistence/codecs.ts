@@ -141,7 +141,8 @@ function isWorkflow(value: unknown): value is TaskWorkflow {
           step.status === "skipped") &&
         (step.agentId === undefined || typeof step.agentId === "string") &&
         (step.templateId === undefined || typeof step.templateId === "string") &&
-        (step.starterPrompt === undefined || typeof step.starterPrompt === "string"),
+        (step.starterPrompt === undefined || typeof step.starterPrompt === "string") &&
+        (step.label === undefined || typeof step.label === "string"),
     )
   );
 }

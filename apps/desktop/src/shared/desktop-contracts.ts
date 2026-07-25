@@ -22,8 +22,15 @@ export type {
   PiThinkingLevel,
 };
 
-export type WorkspaceTaskStatus = "idle" | "running" | "done" | "error" | "interrupted";
+export type TaskStatus = "idle" | "running" | "done" | "error" | "interrupted";
+export type AgentStatus = TaskStatus;
+/** @deprecated Use TaskStatus */
+export type WorkspaceTaskStatus = TaskStatus;
 export type SessionAvailability = "available" | "missing";
+
+export type SkillPolicy = {
+  ignoredSkillNames: string[];
+};
 
 /** Matt engineering playbooks (first slice: three paths). */
 export type TaskPlaybookId = "feature-default" | "small-tdd" | "bugfix";
@@ -33,44 +40,97 @@ export type TaskWorkflowStepStatus = "pending" | "active" | "done" | "skipped";
 export type TaskWorkflowStep = {
   id: string;
   status: TaskWorkflowStepStatus;
-  /**
-   * Task that owns this step’s PI Session (subagent unit).
-   * Step 1 often equals the Root Task id; later steps are Child Tasks.
-   */
-  taskId?: string;
-  /**
-   * Snapshot of the step role prompt when the step was activated
-   * (so main can rebind host without importing renderer playbooks).
-   */
-  rolePrompt?: string;
+  /** Bound Agent for this step’s PI Session (lazy on first open/advance). */
+  agentId?: string;
 };
 
 /** Task-shell SOP progress — decoupled from chat/timeline. */
 export type TaskWorkflow = {
   playbookId: TaskPlaybookId;
+  /** Playbook cursor (not necessarily the Agent being viewed). */
   stepId: string;
   steps: TaskWorkflowStep[];
 };
 
-export type WorkspaceTask = {
+/** User-facing work unit. Never owns a PI Session. */
+export type Task = {
   id: string;
-  parentTaskId: string | null;
-  rootTaskId: string;
   title: string;
   cwd: string;
-  sessionPath: string | null;
-  sessionId: string | null;
-  sessionAvailability: SessionAvailability;
-  status: WorkspaceTaskStatus;
+  status: TaskStatus;
   position: number;
   createdAt: number;
   updatedAt: number;
-  /** Soft-delete timestamp; omitted/undefined means active in the sidebar. */
   archivedAt?: number;
   workflow?: TaskWorkflow;
-  /** Skill names excluded from this task's ResourceLoader / system prompt. */
-  ignoredSkillNames?: string[];
 };
+
+export type AgentTemplateSource = "system" | "user";
+
+export type AgentTemplate = {
+  id: string;
+  name: string;
+  /** Library-only blurb; not part of Agent snapshot / model prompt. */
+  description: string;
+  systemPrompt: string;
+  skillPolicy: SkillPolicy;
+  source: AgentTemplateSource;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AgentTemplateCreateRequest = {
+  name: string;
+  description?: string;
+  systemPrompt?: string;
+  skillPolicy?: SkillPolicy;
+};
+
+export type AgentTemplateUpdateRequest = {
+  id: string;
+  name?: string;
+  description?: string;
+  systemPrompt?: string;
+  skillPolicy?: SkillPolicy;
+};
+
+export type AgentTemplateDeleteResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string };
+
+export type AgentTemplateResetResult =
+  | { ok: true; template: AgentTemplate }
+  | { ok: false; error: string };
+
+/** Executable runner: 1:1 PI Session + instance snapshot. */
+export type Agent = {
+  id: string;
+  taskId: string;
+  parentAgentId: string | null;
+  templateId: string | null;
+  name: string;
+  /** Role Prompt (role base). Non-empty replaces PI default coding base on bind. */
+  systemPrompt: string;
+  skillPolicy: SkillPolicy;
+  inputContext: string | null;
+  outputContext: string | null;
+  sessionId: string | null;
+  sessionPath: string | null;
+  /** Derived at read time from session_path on disk. */
+  sessionAvailability: SessionAvailability;
+  /** null = Role Prompt not yet confirmed for this instance. */
+  rolePromptConfirmedAt: number | null;
+  status: AgentStatus;
+  position: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+/**
+ * @deprecated Prefer `Task`. Temporary alias for incremental renames —
+ * Tasks no longer carry session fields.
+ */
+export type WorkspaceTask = Task;
 
 export type AppPreferences = {
   theme: "dark" | "light";
@@ -109,8 +169,67 @@ export type WorkspaceTaskMoveRequest = {
 };
 
 export type WorkspaceTaskRelinkResult =
-  | { ok: true; task: WorkspaceTask }
+  | { ok: true; agent: Agent }
   | { ok: false; cancelled?: boolean; error: string };
+
+export type TaskCreateRequest = {
+  cwd: string;
+  title?: string;
+  playbookId?: TaskPlaybookId | null;
+};
+
+export type AgentCreateFromTemplateRequest = {
+  taskId: string;
+  templateId: string;
+  stepId?: string;
+  parentAgentId?: string | null;
+  inputContext?: string | null;
+  name?: string;
+};
+
+export type AgentSpawnChildRequest = {
+  parentAgentId: string;
+  templateId?: string | null;
+  name: string;
+  systemPrompt?: string;
+  skillPolicy?: SkillPolicy;
+  inputContext?: string | null;
+};
+
+export type AgentUpdateRequest = {
+  id: string;
+  name?: string;
+  systemPrompt?: string;
+  skillPolicy?: SkillPolicy;
+  inputContext?: string | null;
+  outputContext?: string | null;
+  /**
+   * When true, set rolePromptConfirmedAt = now.
+   * Used by: banner confirm, save Role Prompt, restore default.
+   */
+  confirmRolePrompt?: boolean;
+  /** Explicit timestamp write; prefer confirmRolePrompt for normal UI. */
+  rolePromptConfirmedAt?: number | null;
+};
+
+export type AgentRestoreRolePromptResult =
+  | { ok: true; agent: Agent }
+  | { ok: false; error: string };
+
+export type AdvanceWorkflowRequest = {
+  taskId: string;
+  mode: "done" | "skipped";
+  /** Last assistant handoff text from the active step Agent. */
+  handoffText?: string | null;
+};
+
+export type AdvanceWorkflowResult = {
+  task: Task;
+  previousAgent: Agent | null;
+  nextAgent: Agent | null;
+  starterPrompt: string | null;
+  completed: boolean;
+};
 
 export type ReviewedFilesRequest = {
   cwd: string;
@@ -130,23 +249,17 @@ export type WorkspaceTaskUpdate = {
   title?: string;
   /** Set to attach/update; `null` clears the playbook. */
   workflow?: TaskWorkflow | null;
-  /** Replace ignored skill names; empty array clears. */
-  ignoredSkillNames?: string[];
 };
 
 export type PiSessionCreateOptions = {
   cwd?: string;
   /** Resume this JSONL path when set. */
   sessionPath?: string | null;
+  /** Create Task shell (optional playbook). No session on Task. */
   taskId?: string;
   title?: string;
-  /** Create as a Child Task under this Root/parent Task. */
-  parentTaskId?: string | null;
-  /**
-   * Extra system prompt segments for this session bind (e.g. workflow step role).
-   * Appended after host defaults (questionnaire, etc.).
-   */
-  appendSystemPrompts?: string[];
+  playbookId?: TaskPlaybookId | null;
+  ignoredSkillNames?: string[];
 };
 
 /** Write a skill into the user's PI personal library (~/.pi/agent/skills). */
@@ -348,29 +461,38 @@ export type PiSessionCreateResult =
       cwd: string;
       state: PiHostState;
       timeline: PiTimelineSnapshot;
-      task: WorkspaceTask;
+      task: Task;
+      agent: Agent;
     };
 
 export type PiPromptResult = PiTurnResult & {
   timeline: PiTimelineSnapshot;
-  task: WorkspaceTask | null;
+  task: Task | null;
+  agent: Agent | null;
 };
 
-export type PiActivateTaskResult =
+export type PiActivateAgentResult =
   | {
       ok: true;
-      task: WorkspaceTask;
+      task: Task;
+      agent: Agent;
       state: PiHostState;
       timeline: PiTimelineSnapshot;
     }
   | {
       ok: false;
       reason: "session_missing";
-      task: WorkspaceTask;
+      task: Task;
+      agent: Agent;
     };
+
+/** @deprecated Use PiActivateAgentResult */
+export type PiActivateTaskResult = PiActivateAgentResult;
 
 export type PiToolApprovalRequest = {
   id: string;
+  /** Agent / host that requested approval (concurrent multi-host). */
+  agentId?: string;
   toolCallId: string;
   toolName: string;
   args: JsonValue;
@@ -383,9 +505,18 @@ export type PiToolApprovalReply = {
 };
 
 export type PiTasksBootstrap = {
-  rootTasks: WorkspaceTask[];
-  activeTask: WorkspaceTask | null;
+  /** Sidebar Task list (all tasks; no parent tree). */
+  tasks: Task[];
+  /** @deprecated Alias of tasks */
+  rootTasks: Task[];
+  activeTask: Task | null;
+  activeTaskId: string | null;
+  /** @deprecated Same as activeTaskId (no root/child split). */
   activeRootTaskId: string | null;
+  activeAgent: Agent | null;
+  activeAgentId: string | null;
+  /** Agents for active task (and empty map entries as needed). */
+  agentsByTaskId: Record<string, Agent[]>;
   appPreferences: AppPreferences;
   workspacePreferences: Record<string, WorkspacePreferences>;
   legacyBrowserPreferencesImported: boolean;
@@ -393,10 +524,12 @@ export type PiTasksBootstrap = {
 
 /** Result of archiving / restoring a task (row kept; JSONL kept on disk). */
 export type PiTasksArchiveResult = {
-  rootTasks: WorkspaceTask[];
+  tasks: Task[];
+  rootTasks: Task[];
   activeTaskId: string | null;
   activeRootTaskId: string | null;
-  /** True when the archived task was the bound host session (caller should rebind or clear UI). */
+  activeAgentId: string | null;
+  /** True when the archived task held the bound Agent (caller should rebind or clear UI). */
   disposed: boolean;
 };
 
@@ -501,39 +634,56 @@ export type WorkspaceMattSkillsStatus = {
   setupMissing: string[];
 };
 
-/** Main → utilityProcess PI host commands. */
+/**
+ * Main → utilityProcess PI host commands.
+ *
+ * Concurrent model: one utilityProcess, many EmbeddedPiHosts keyed by `hostId`
+ * (agent id). `tool_approval_reply` is keyed by approvalId only.
+ * `dispose` without hostId tears down every host in the process.
+ */
 export type PiHostCommand =
-  | { id: string; type: "abort" }
+  | { id: string; hostId: string; type: "abort" }
   | {
       id: string;
+      hostId: string;
       type: "create";
       cwd: string;
       sessionPath?: string | null;
       ignoredSkillNames?: string[];
-      /** Role / step prompts appended after built-in host prompts. */
-      appendSystemPrompts?: string[];
+      /**
+       * Role Prompt base. Non-empty → replace PI default coding base.
+       * Empty/omitted → PI default base. Product appends stay host-owned.
+       */
+      rolePrompt?: string;
     }
-  | { id: string; type: "dispose" }
-  | { id: string; type: "get_state" }
-  | { id: string; type: "inspect_live" }
-  | { id: string; type: "list_models" }
-  | { id: string; type: "list_thinking_levels" }
+  | { id: string; hostId?: string; type: "dispose" }
+  | { id: string; hostId: string; type: "get_state" }
   | {
       id: string;
+      hostId: string;
+      type: "inspect_live";
+      /** summary skips transcript convertToLlm (HUD); full is Context inspector. */
+      detail?: "summary" | "full";
+    }
+  | { id: string; hostId: string; type: "list_models" }
+  | { id: string; hostId: string; type: "list_thinking_levels" }
+  | {
+      id: string;
+      hostId: string;
       type: "navigate_tree";
       entryId: string;
       summarize?: boolean;
       label?: string;
     }
-  | { id: string; type: "prepare_branch_summary" }
-  | { id: string; type: "get_prepared_branch_summary" }
-  | { id: string; type: "clear_prepared_branch_summary" }
-  | { id: string; type: "set_model"; provider: string; modelId: string }
-  | { id: string; type: "set_thinking_level"; level: PiThinkingLevel }
-  | { id: string; type: "set_auto_approve"; unlocked: boolean }
-  | { id: string; type: "get_auto_approve" }
-  | { id: string; text: string; type: "prompt" }
-  | { id: string; type: "continue_turn" }
+  | { id: string; hostId: string; type: "prepare_branch_summary" }
+  | { id: string; hostId: string; type: "get_prepared_branch_summary" }
+  | { id: string; hostId: string; type: "clear_prepared_branch_summary" }
+  | { id: string; hostId: string; type: "set_model"; provider: string; modelId: string }
+  | { id: string; hostId: string; type: "set_thinking_level"; level: PiThinkingLevel }
+  | { id: string; hostId: string; type: "set_auto_approve"; unlocked: boolean }
+  | { id: string; hostId: string; type: "get_auto_approve" }
+  | { id: string; hostId: string; text: string; type: "prompt" }
+  | { id: string; hostId: string; type: "continue_turn" }
   | {
       id: string;
       type: "tool_approval_reply";
@@ -564,6 +714,7 @@ export type PiHostResponse =
 
 export type PiHostToolApprovalRequestMessage = {
   type: "tool_approval";
+  hostId: string;
   approvalId: string;
   toolCallId: string;
   toolName: string;
@@ -573,5 +724,5 @@ export type PiHostToolApprovalRequestMessage = {
 export type PiHostProcessMessage =
   | PiHostResponse
   | { type: "ready" }
-  | { type: "event"; event: PiHostEvent }
+  | { type: "event"; hostId: string; event: PiHostEvent }
   | PiHostToolApprovalRequestMessage;

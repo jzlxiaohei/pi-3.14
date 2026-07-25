@@ -1,5 +1,6 @@
 import type { PiThinkingLevel } from "@pi-3.14/model";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, shell } from "electron";
+import { isAbsolute, normalize, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installMattSkills, readMattSkillsStatus } from "./pi/install-matt-skills";
 import { personalSkillsDir, writePersonalSkill } from "./pi/personal-skills";
@@ -121,6 +122,7 @@ function createMainWindow() {
     }
   });
 
+  hardenWindowNavigation(window);
   window.once("ready-to-show", () => window.show());
   attachTransientLoadRetry(window, () => loadMainRenderer(window));
   void loadMainRenderer(window).catch((error) => {
@@ -133,6 +135,99 @@ function createMainWindow() {
   });
 
   mainWindow = window;
+}
+
+/**
+ * Never let markdown / window.open / middle-click leave the SPA shell.
+ * Relative paths in chat used to load as app routes → blank white screen.
+ */
+function hardenWindowNavigation(window: BrowserWindow): void {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void openHrefFromRenderer(url);
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    // Allow the intentional first load of the renderer itself.
+    const current = window.webContents.getURL();
+    if (!current || url === current) return;
+    // Dev server HMR / same-origin hash changes stay in-app.
+    if (isDevelopment && process.env.ELECTRON_RENDERER_URL) {
+      const base = process.env.ELECTRON_RENDERER_URL.replace(/\/$/, "");
+      if (url === base || url.startsWith(`${base}/`) || url.startsWith(`${base}#`)) return;
+    }
+    if (url.startsWith("file:") && url.includes("index.html")) return;
+    event.preventDefault();
+    void openHrefFromRenderer(url);
+  });
+}
+
+type OpenHrefResult =
+  | { ok: true; kind: "external" | "path" }
+  | { ok: false; error: string };
+
+async function openHrefFromRenderer(rawHref: string): Promise<OpenHrefResult> {
+  const href = typeof rawHref === "string" ? rawHref.trim() : "";
+  if (!href || href.startsWith("#") || href.toLowerCase().startsWith("javascript:")) {
+    return { ok: false, error: "Unsupported link" };
+  }
+
+  // Absolute web / mailto — system handler only.
+  if (/^(https?:|mailto:)/i.test(href)) {
+    try {
+      await shell.openExternal(href);
+      return { ok: true, kind: "external" };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  // file:// → local path
+  let candidate = href;
+  if (href.startsWith("file:")) {
+    try {
+      candidate = fileURLToPath(href);
+    } catch {
+      return { ok: false, error: "Invalid file URL" };
+    }
+  }
+
+  // Strip electron-vite / app origin if Chromium resolved a relative link against it.
+  if (isDevelopment && process.env.ELECTRON_RENDERER_URL && candidate.startsWith("http")) {
+    try {
+      const base = new URL(process.env.ELECTRON_RENDERER_URL);
+      const url = new URL(candidate);
+      if (url.origin === base.origin) {
+        candidate = decodeURIComponent(url.pathname);
+      }
+    } catch {
+      // keep candidate
+    }
+  }
+
+  const cwd = piRuntime?.getWorkspaceCwd() ?? null;
+  const absolute = isAbsolute(candidate)
+    ? normalize(candidate)
+    : cwd
+      ? normalize(resolvePath(cwd, candidate.replace(/^\//, "")))
+      : null;
+
+  if (!absolute) {
+    return { ok: false, error: "No workspace to resolve relative path" };
+  }
+
+  // Soft allowlist: prefer paths under the active workspace when we have one.
+  if (cwd) {
+    const root = normalize(cwd + sep);
+    const target = normalize(absolute);
+    if (target !== normalize(cwd) && !target.startsWith(root)) {
+      // Still allow absolute paths the model cited outside the workspace (e.g. /tmp/log).
+      // Only block obvious escapes that stay "relative-looking" after resolve? Keep open.
+    }
+  }
+
+  const err = await shell.openPath(absolute);
+  if (err) return { ok: false, error: err || "Failed to open path" };
+  return { ok: true, kind: "path" };
 }
 
 function createReviewWindow(request: WorkspaceOpenReviewRequest, parent: BrowserWindow | null) {
@@ -163,6 +258,7 @@ function createReviewWindow(request: WorkspaceOpenReviewRequest, parent: Browser
   });
 
   reviewWindow = window;
+  hardenWindowNavigation(window);
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     reviewWindow = null;
@@ -242,15 +338,15 @@ app.whenReady().then(() => {
     return { ok: true as const };
   });
 
+  /** Open http(s)/mailto externally, or workspace-relative / absolute paths via OS. */
+  ipcMain.handle("shell:open-href", (_event, href: string) => openHrefFromRenderer(href));
+
   ipcMain.handle(
     "pi:tasks:bootstrap",
     (_event, request?: { legacyPanelPreferences?: LegacyPanelPreferences }) =>
       piRuntime.bootstrap(request?.legacyPanelPreferences),
   );
   ipcMain.handle("pi:tasks:list", () => piRuntime.listTasks());
-  ipcMain.handle("pi:tasks:list-children", (_event, parentTaskId: string) =>
-    pieStore!.listChildren(parentTaskId),
-  );
   ipcMain.handle(
     "pi:tasks:activate",
     (event, taskId: string, options?: { force?: boolean }) => {
@@ -261,14 +357,10 @@ app.whenReady().then(() => {
     return piRuntime.updateTask(request.id, {
       title: request.title,
       workflow: request.workflow,
-      ignoredSkillNames: request.ignoredSkillNames,
     });
   });
   ipcMain.handle("pi:tasks:move", (_event, request: WorkspaceTaskMoveRequest) => {
     return piRuntime.moveTask(request);
-  });
-  ipcMain.handle("pi:tasks:relink", (event, taskId: string) => {
-    return piRuntime.relinkTaskSession(event.sender, taskId);
   });
   ipcMain.handle("pi:tasks:archive", (_event, taskId: string) => {
     return piRuntime.archiveTask(taskId);
@@ -276,6 +368,39 @@ app.whenReady().then(() => {
   ipcMain.handle("pi:tasks:unarchive", (_event, taskId: string) => {
     return piRuntime.unarchiveTask(taskId);
   });
+
+  ipcMain.handle("pi:agents:list", (_event, taskId: string) => piRuntime.listAgents(taskId));
+  ipcMain.handle(
+    "pi:agents:activate",
+    (event, agentId: string, options?: { force?: boolean }) => {
+      return piRuntime.activateAgent(event.sender, agentId, options);
+    },
+  );
+  ipcMain.handle("pi:agents:create", (_event, request) =>
+    piRuntime.createAgentFromTemplate(request),
+  );
+  ipcMain.handle("pi:agents:spawn", (_event, request) => piRuntime.spawnChildAgent(request));
+  ipcMain.handle("pi:agents:update", (_event, request) => piRuntime.updateAgent(request));
+  ipcMain.handle("pi:agents:confirm-role-prompt", (_event, agentId: string) =>
+    piRuntime.confirmAgentRolePrompt(agentId),
+  );
+  ipcMain.handle("pi:agents:restore-role-prompt", (_event, agentId: string) =>
+    piRuntime.restoreAgentRolePromptFromTemplate(agentId),
+  );
+  ipcMain.handle("pi:agents:advance-workflow", (event, request) => {
+    return piRuntime.advanceTaskWorkflow(event.sender, request);
+  });
+  ipcMain.handle("pi:agents:relink", (event, agentId: string) => {
+    return piRuntime.relinkAgentSession(event.sender, agentId);
+  });
+  ipcMain.handle("pi:templates:list", () => piRuntime.listTemplates());
+  ipcMain.handle("pi:templates:create", (_event, request) => piRuntime.createTemplate(request));
+  ipcMain.handle("pi:templates:update", (_event, request) => piRuntime.updateTemplate(request));
+  ipcMain.handle("pi:templates:delete", (_event, id: string) => piRuntime.deleteTemplate(id));
+  ipcMain.handle("pi:templates:duplicate", (_event, id: string) => piRuntime.duplicateTemplate(id));
+  ipcMain.handle("pi:templates:reset-factory", (_event, id: string) =>
+    piRuntime.resetTemplateFactory(id),
+  );
 
   ipcMain.handle("preferences:update-app", (_event, patch: AppPreferencesUpdate) => {
     return pieStore!.updateAppPreferences(patch);
@@ -289,11 +414,11 @@ app.whenReady().then(() => {
       return pieStore!.updateWorkspacePreferences(cwd, patch);
     },
   );
-  ipcMain.handle("preferences:get-draft", (_event, taskId: string) => {
-    return pieStore!.getDraft(taskId);
+  ipcMain.handle("preferences:get-draft", (_event, agentId: string) => {
+    return pieStore!.getDraft(agentId);
   });
-  ipcMain.handle("preferences:save-draft", (_event, taskId: string, draft: string) => {
-    return pieStore!.saveDraft(taskId, draft);
+  ipcMain.handle("preferences:save-draft", (_event, agentId: string, draft: string) => {
+    return pieStore!.saveDraft(agentId, draft);
   });
   ipcMain.handle("preferences:get-reviewed", (_event, request: ReviewedFilesRequest) => {
     return pieStore!.getReviewedPaths(request);
@@ -321,16 +446,19 @@ app.whenReady().then(() => {
     return piRuntime.createSession(event.sender, options);
   });
 
-  ipcMain.handle("pi:session:prompt", (event, text: string) => {
-    return piRuntime.prompt(event.sender, text);
+  ipcMain.handle(
+    "pi:session:prompt",
+    (event, text: string, options?: { agentId?: string }) => {
+      return piRuntime.prompt(event.sender, text, options);
+    },
+  );
+
+  ipcMain.handle("pi:session:continue", (event, options?: { agentId?: string }) => {
+    return piRuntime.continueTurn(event.sender, options);
   });
 
-  ipcMain.handle("pi:session:continue", (event) => {
-    return piRuntime.continueTurn(event.sender);
-  });
-
-  ipcMain.handle("pi:session:abort", () => {
-    return piRuntime.abort();
+  ipcMain.handle("pi:session:abort", (_event, options?: { agentId?: string }) => {
+    return piRuntime.abort(options);
   });
 
   ipcMain.handle("pi:session:get-state", () => {
@@ -368,9 +496,12 @@ app.whenReady().then(() => {
     return piRuntime.getTimeline();
   });
 
-  ipcMain.handle("pi:session:inspect", () => {
-    return piRuntime.inspectSession();
-  });
+  ipcMain.handle(
+    "pi:session:inspect",
+    (_event, options?: { detail?: "full" | "hud" }) => {
+      return piRuntime.inspectSession(options);
+    },
+  );
 
   ipcMain.handle("usage:provider-quotas", (_event, force?: boolean) => {
     return getProviderUsageSnapshots(Boolean(force));

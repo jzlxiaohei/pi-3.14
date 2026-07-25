@@ -9,7 +9,7 @@ import {
 } from "lucide-solid";
 import type { ProviderQuotaOk, ProviderQuotaSnapshot, QuotaWindow } from "@pi-3.14/usage";
 import { resolveUsageProviderId, selectQuotasForModel } from "@pi-3.14/usage";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show, untrack } from "solid-js";
 import type {
   TaskPlaybookId,
   TaskWorkflow,
@@ -27,9 +27,7 @@ import {
 import type { WorkspaceModel } from "../model";
 import type { AgentWorkspaceSession } from "../session";
 import {
-  advanceWorkflow,
-  buildStepOpenPrompt,
-  createWorkflow,
+  STEP_HANDOFF_PROMPT,
   getPlaybook,
   workflowView,
 } from "../workflow/playbooks";
@@ -45,9 +43,12 @@ import { ExtractSkillBanner } from "./extract-skill-banner";
 import { ExtractSkillDialog } from "./extract-skill-dialog";
 import { ForkPointBanner } from "./fork-point-banner";
 import { Inspector } from "./inspector";
+import { RolePromptBanner } from "./role-prompt-banner";
 import { NewTaskDialog } from "./new-task-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
-import { Rail } from "./rail";
+import { Rail, type MainView } from "./rail";
+import { TemplatesPage } from "../../agent-templates/ui/page";
+import type { TemplatesModel } from "../../agent-templates/model";
 import { TaskHeader } from "./task-header";
 import { TaskSkillsDialog } from "./task-skills-dialog";
 import { TaskSidebar } from "./task-sidebar";
@@ -99,10 +100,20 @@ export function AppShell(props: AppShellProps) {
   /** Suppress timeline auto-follow while Switch & view pins a message. */
   const [pinScrollEntryId, setPinScrollEntryId] = createSignal<string | null>(null);
   const [pendingEdit, setPendingEdit] = createSignal<PendingEdit | null>(null);
+  const [mainView, setMainView] = createSignal<MainView>("workspace");
+  const [templatesModel, setTemplatesModel] = createSignal<TemplatesModel | null>(null);
+  const [leaveTemplatesConfirm, setLeaveTemplatesConfirm] = createSignal(false);
+  const [tasksOpenBeforeTemplates, setTasksOpenBeforeTemplates] = createSignal(true);
   const [skillFilterBusy, setSkillFilterBusy] = createSignal(false);
+  /** Done → handoff LLM in flight (ADR-0003). */
+  const [workflowAdvancing, setWorkflowAdvancing] = createSignal(false);
   const [hudContextPercent, setHudContextPercent] = createSignal<number | null>(null);
   const [hudQuotaWindows, setHudQuotaWindows] = createSignal<ComposerHudWindow[]>([]);
   const [hudQuotaMessage, setHudQuotaMessage] = createSignal<string | null>(null);
+  /** Live skills for composer `/` completion (from session inspect). */
+  const [composerSkills, setComposerSkills] = createSignal<
+    Array<{ name: string; description?: string }>
+  >([]);
   const [chatLayoutEl, setChatLayoutEl] = createSignal<HTMLDivElement | null>(null);
   /** Wide enough for the surplus rail — boolean only (avoid per-pixel reactive churn). */
   const [layoutWide, setLayoutWide] = createSignal(false);
@@ -175,17 +186,23 @@ export function AppShell(props: AppShellProps) {
     const busy = props.session.isBusy();
     const cwd = props.session.cwd();
     if (wasBusy && !busy && cwd) {
-      void window.piDesktop.workspace.git(cwd).then(setGit).catch(() => setGit(null));
-      setInspectorRefresh((value) => value + 1);
-      void refreshComposerHud();
+      // Failed Retry settles almost immediately — a full inspect (convertToLlm +
+      // branch graphs) freezes main while the UI already looks "ready".
+      // Success path still needs meters/branches; error/abort only needs light HUD.
+      const runStatus = untrack(() => props.session.status().runStatus);
+      if (runStatus === "error" || runStatus === "aborted") {
+        scheduleComposerHudRefresh();
+      } else {
+        schedulePostTurnRefresh();
+      }
     }
     wasBusy = busy;
   });
   createEffect(() => {
     const ready = props.session.isReady();
-    const busy = props.session.isBusy();
     const cwd = props.session.cwd();
     // Re-filter subscription meters when the active model provider changes.
+    // Do NOT track isBusy here — busy→idle is handled above (avoids double inspect).
     props.session.modelValue();
     if (!ready || !cwd) {
       setHudContextPercent(null);
@@ -193,8 +210,26 @@ export function AppShell(props: AppShellProps) {
       setHudQuotaMessage(null);
       return;
     }
-    if (busy) return;
-    void refreshComposerHud();
+    if (untrack(() => props.session.isBusy())) return;
+    scheduleComposerHudRefresh();
+  });
+
+  // Global ⌘N / Ctrl+N — matches the sidebar "New task" hint.
+  createEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== "n") return;
+      // Don't steal chord from inputs that expect ctrl/meta+n (rare); only block
+      // when a dialog already owns the flow.
+      if (newTaskOpen() || extractOpen() || reviewOpen() || skillsOpen() || branchesOpen()) {
+        return;
+      }
+      event.preventDefault();
+      startNewTask();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
   });
 
   const composerHud = createMemo(() => {
@@ -238,47 +273,95 @@ export function AppShell(props: AppShellProps) {
   });
 
   function startNewTask() {
+    // Shortcut works even when the task list is collapsed.
+    if (mainView() !== "workspace") {
+      goWorkspace();
+    }
+    if (!props.model.tasksOpen()) props.model.setTasksOpen(true);
     setNewTaskOpen(true);
+  }
+
+  function goWorkspace(): void {
+    setMainView("workspace");
+    // Restore task sidebar if we collapsed it for Templates.
+    if (!props.model.tasksOpen() && tasksOpenBeforeTemplates()) {
+      props.model.setTasksOpen(true);
+    }
+  }
+
+  function requestTemplates(): void {
+    if (mainView() === "templates") return;
+    setTasksOpenBeforeTemplates(props.model.tasksOpen());
+    if (props.model.tasksOpen()) props.model.setTasksOpen(false);
+    setMainView("templates");
+  }
+
+  function requestTasksFromRail(): void {
+    if (mainView() === "templates") {
+      const tm = templatesModel();
+      if (tm?.dirty()) {
+        setLeaveTemplatesConfirm(true);
+        return;
+      }
+      goWorkspace();
+      return;
+    }
+    props.model.setTasksOpen(!tasksOpen());
+  }
+
+  function confirmLeaveTemplates(): void {
+    const tm = templatesModel();
+    tm?.discardDraft();
+    setLeaveTemplatesConfirm(false);
+    goWorkspace();
   }
 
   async function confirmNewTask(playbookId: TaskPlaybookId | null): Promise<void> {
     setNewTaskOpen(false);
-    if (!playbookId) {
-      await props.session.createNewTask();
-      return;
-    }
-    const playbook = getPlaybook(playbookId);
-    const first = playbook.steps[0]!;
-    // Create once with step rolePrompt — do not rebind.
-    // Brand-new PI sessions often have no JSONL on disk until the first assistant
-    // message; force-activate would false-flag them as "session unavailable".
-    const ok = await props.session.createNewTask({
-      appendSystemPrompts: [first.rolePrompt],
-    });
-    if (!ok) return;
-    const root = props.model.selectedWorkspaceTask();
-    if (!root) return;
-    const workflow = createWorkflow(playbookId);
-    workflow.steps = workflow.steps.map((step) =>
-      step.id === first.id
-        ? { ...step, taskId: root.id, rolePrompt: first.rolePrompt }
-        : step,
+    // Task shell + first Agent Session (playbook or ad-hoc) via main facade.
+    await props.session.createNewTask(
+      playbookId ? { playbookId } : undefined,
     );
-    await persistWorkflow(workflow, first.starterPrompt);
+    if (playbookId) {
+      const first = getPlaybook(playbookId).steps[0]!;
+      props.session.prefillDraft(first.starterPrompt);
+    }
   }
 
   function refreshInspector() {
     setInspectorRefresh((value) => value + 1);
     const cwd = props.session.cwd();
     if (cwd) void window.piDesktop.workspace.git(cwd).then(setGit).catch(() => setGit(null));
-    void refreshComposerHud();
+    scheduleComposerHudRefresh();
   }
 
+  /** After a turn settles: one branches + inspector + git + HUD refresh (debounced HUD). */
+  function schedulePostTurnRefresh(): void {
+    setBranchesRefresh((value) => value + 1);
+    setInspectorRefresh((value) => value + 1);
+    const cwd = props.session.cwd();
+    if (cwd) void window.piDesktop.workspace.git(cwd).then(setGit).catch(() => setGit(null));
+    scheduleComposerHudRefresh();
+  }
+
+  let composerHudTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleComposerHudRefresh(): void {
+    clearTimeout(composerHudTimer);
+    composerHudTimer = setTimeout(() => {
+      void refreshComposerHud();
+    }, 80);
+  }
+  onCleanup(() => clearTimeout(composerHudTimer));
+
   async function refreshComposerHud(): Promise<void> {
-    if (!props.session.isReady()) return;
+    if (!props.session.isReady()) {
+      setComposerSkills([]);
+      return;
+    }
     try {
       const [inspect, quotas] = await Promise.all([
-        window.piDesktop.session.inspect(),
+        // HUD only needs context % + skills — never full transcript / branch graphs.
+        window.piDesktop.session.inspect({ detail: "hud" }),
         window.piDesktop.usage.providerQuotas().catch(() => [] as ProviderQuotaSnapshot[]),
       ]);
       const modelProvider =
@@ -292,10 +375,25 @@ export function AppShell(props: AppShellProps) {
       setHudQuotaMessage(
         windows.length > 0 ? null : describeQuotaSnapshots(relevant, modelProvider),
       );
+      const ignored = new Set(
+        (props.session.activeAgent()?.skillPolicy.ignoredSkillNames ?? []).map(
+          (name: string) => name.trim(),
+        ),
+      );
+      setComposerSkills(
+        (inspect.live?.skills ?? [])
+          .filter((skill) => skill.name && !ignored.has(skill.name))
+          .map((skill) => ({
+            name: skill.name,
+            description: skill.description || undefined,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
     } catch {
       setHudContextPercent(null);
       setHudQuotaWindows([]);
       setHudQuotaMessage("Usage unavailable");
+      setComposerSkills([]);
     }
   }
 
@@ -422,107 +520,137 @@ export function AppShell(props: AppShellProps) {
   ): Promise<void> {
     const task = props.model.selectedWorkspaceTask();
     if (!task) return;
-    // Workflow state always lives on the Root Task.
-    const rootId = task.rootTaskId;
-    const updated = await window.piDesktop.tasks.update({ id: rootId, workflow });
+    const updated = await window.piDesktop.tasks.update({ id: task.id, workflow });
     if (updated) props.model.upsertTask(updated, true, false);
+    // Clearing the playbook shell must not hide prior step Agents.
+    void props.model.refreshAgents(task.id);
     if (starterPrompt) props.session.prefillDraft(starterPrompt);
   }
 
   /**
-   * Advance playbook step: mark done/skipped, spawn next step as a Child Task
-   * (independent session + rolePrompt), activate it, prefill handoff + starter.
+   * Advance playbook via main Agent facade.
+   * Done + next step: ADR-0003 forced handoff turn on the current session first
+   * (not last-assistant-bubble). Skip: no handoff LLM.
    */
   async function advanceWorkflowStep(mode: "done" | "skipped"): Promise<void> {
+    if (workflowAdvancing()) return;
     const root = props.model.selectedWorkspaceTask();
     const workflow = root?.workflow;
     if (!root || !workflow) return;
-
-    const handoff = lastAssistantHandoff(props.session.items());
-    const result = advanceWorkflow(workflow, mode);
-
-    // Playbook finished.
-    if (workflowView(result.workflow).completed || !result.nextStepDef) {
-      await persistWorkflow(
-        workflowView(result.workflow).completed ? null : result.workflow,
-        null,
-      );
+    if (props.session.isBusy() || props.session.isCreatingSession()) {
+      notifyError("请等待当前回合结束后再切换步骤");
       return;
     }
 
-    const nextDef = result.nextStepDef;
-    const childId = await props.session.openWorkflowStepSession({
-      parentTaskId: root.rootTaskId,
-      cwd: root.cwd,
-      title: `${nextDef.label} · ${root.title}`.slice(0, 120),
-      rolePrompt: nextDef.rolePrompt,
-    });
-    if (!childId) {
-      notifyError("无法创建下一步 session");
-      return;
-    }
+    const view = workflowView(workflow);
+    const needsHandoffTurn = mode === "done" && !view.isLast && !view.completed;
 
-    const steps = result.workflow.steps.map((step) =>
-      step.id === nextDef.id
-        ? { ...step, taskId: childId, rolePrompt: nextDef.rolePrompt, status: "active" as const }
-        : step,
-    );
-    const nextWorkflow: TaskWorkflow = {
-      ...result.workflow,
-      steps,
-    };
-    // Workflow metadata stays on the root even while the child session is active.
-    await persistWorkflow(nextWorkflow, buildStepOpenPrompt(nextDef, handoff));
-  }
-
-  function lastAssistantHandoff(
-    items: { kind: string; text?: string }[],
-  ): string | null {
-    for (let i = items.length - 1; i >= 0; i -= 1) {
-      const item = items[i];
-      if (item?.kind === "assistant" && typeof item.text === "string" && item.text.trim()) {
-        const text = item.text.trim();
-        return text.length > 4000 ? `${text.slice(0, 3999)}…` : text;
+    setWorkflowAdvancing(true);
+    try {
+      let handoff: string | null = null;
+      if (mode === "skipped") {
+        handoff = `_Previous step \`${workflow.stepId}\` was skipped._`;
+      } else if (needsHandoffTurn) {
+        notifySuccess("正在生成步骤交接摘要…");
+        const body = await props.session.promptForResult(STEP_HANDOFF_PROMPT);
+        if (!body?.trim()) {
+          notifyError(
+            "交接摘要生成失败",
+            "未得到可用的 Step Handoff。请重试 Done，或先在本步补全结论。",
+          );
+          return;
+        }
+        handoff = body.trim();
       }
+      // Last step Done: no next agent — handoff optional/not required.
+
+      const result = await window.piDesktop.agents.advanceWorkflow({
+        taskId: root.id,
+        mode,
+        handoffText: handoff,
+      });
+      props.model.upsertTask(result.task, true, false);
+      void props.model.refreshAgents(root.id);
+      if (result.nextAgent) {
+        await props.session.activateAgent(result.nextAgent.id);
+        if (result.starterPrompt) props.session.prefillDraft(result.starterPrompt);
+      }
+      if (result.completed) {
+        notifySuccess("工程路径已完成");
+      } else if (mode === "done") {
+        notifySuccess("已进入下一步");
+      }
+    } catch (error) {
+      notifyError("无法推进步骤", error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkflowAdvancing(false);
     }
-    return null;
   }
 
   async function setIgnoredSkillNames(names: string[]): Promise<void> {
-    const task = props.model.selectedWorkspaceTask();
-    if (!task || skillFilterBusy()) return;
-    const previous = [...(task.ignoredSkillNames ?? [])];
-
-    const withIgnored = (base: typeof task, ignored: string[]) => {
-      const next = { ...base };
-      if (ignored.length > 0) next.ignoredSkillNames = ignored;
-      else delete next.ignoredSkillNames;
-      return next;
-    };
-
-    // Optimistic: list moves immediately; quiet rebind keeps chat/context mounted.
-    props.model.upsertTask(withIgnored(task, names), true, false);
+    const agent = props.session.activeAgent();
+    if (!agent || skillFilterBusy()) return;
     setSkillFilterBusy(true);
     try {
-      const updated = await window.piDesktop.tasks.update({
-        id: task.id,
-        ignoredSkillNames: names,
+      const updated = await window.piDesktop.agents.update({
+        id: agent.id,
+        skillPolicy: { ignoredSkillNames: names },
       });
       if (!updated) {
-        props.model.upsertTask(withIgnored(task, previous), true, false);
         notifyError("未能更新忽略的 Skills");
         return;
       }
-      props.model.upsertTask(updated, true, false);
+      props.session.setActiveAgentLocal(updated);
       const ok = await props.session.rebindActiveTask({ quiet: true });
       if (!ok) {
         notifyError("已保存忽略列表，但重新加载 Skills 失败");
         return;
       }
       setInspectorRefresh((value) => value + 1);
+      void refreshComposerHud();
     } finally {
       setSkillFilterBusy(false);
     }
+  }
+
+  const [rolePromptConfirming, setRolePromptConfirming] = createSignal(false);
+
+  async function confirmRolePrompt(): Promise<void> {
+    const agent = props.session.activeAgent();
+    if (!agent || rolePromptConfirming()) return;
+    setRolePromptConfirming(true);
+    try {
+      const updated = await window.piDesktop.agents.confirmRolePrompt(agent.id);
+      if (!updated) {
+        notifyError("未能确认 Role Prompt");
+        return;
+      }
+      props.session.setActiveAgentLocal(updated);
+    } catch (error) {
+      notifyError(
+        "未能确认 Role Prompt",
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setRolePromptConfirming(false);
+    }
+  }
+
+  /** Close inspector so the chat-right Role Prompt panel is visible, then focus it. */
+  function focusRolePromptEditor(): void {
+    if (inspectorOpen()) {
+      props.model.setInspectorOpen(false);
+    }
+    queueMicrotask(() => {
+      const el = document.querySelector<HTMLTextAreaElement>(".role-prompt-panel__textarea");
+      el?.focus();
+    });
+  }
+
+  async function onRolePromptSaved(): Promise<void> {
+    await props.session.scheduleRolePromptRebind();
+    setInspectorRefresh((value) => value + 1);
+    void refreshComposerHud();
   }
 
   function openExtract() {
@@ -578,10 +706,17 @@ export function AppShell(props: AppShellProps) {
 
         <div class="workspace-grid">
           <Rail
+            mainView={mainView()}
             tasksOpen={tasksOpen()}
-            onNewTask={startNewTask}
-            onToggleTasks={() => props.model.setTasksOpen(!tasksOpen())}
+            onSelectTasks={requestTasksFromRail}
+            onSelectTemplates={requestTemplates}
           />
+          <Show when={mainView() === "templates"}>
+            <div class="templates-shell">
+              <TemplatesPage onModelReady={setTemplatesModel} />
+            </div>
+          </Show>
+          <Show when={mainView() === "workspace"}>
           <div
             class="workspace-body"
             style={{
@@ -594,10 +729,12 @@ export function AppShell(props: AppShellProps) {
                 <TaskSidebar
                   loadingTaskId={props.session.openingTaskId()}
                   activeTaskId={props.session.activeTaskId()}
+                  activeAgentId={props.session.activeAgent()?.id ?? null}
                   model={props.model}
                   onCollapse={() => props.model.setTasksOpen(false)}
                   onNewTask={startNewTask}
                   onSelectTask={(id) => void props.session.activateTask(id)}
+                  onSelectAgent={(id) => void props.session.activateAgent(id)}
                   onArchiveTask={(id) => void props.session.archiveTask(id)}
                   onUnarchiveTask={(id) => void props.session.unarchiveTask(id)}
                 />
@@ -625,7 +762,7 @@ export function AppShell(props: AppShellProps) {
                   playbookTitle={playbookTitle()}
                   branchesOpen={branchesOpen()}
                   canExportSession={Boolean(
-                    props.model.selectedTask()?.sessionPath ||
+                    props.session.activeAgent()?.sessionPath ||
                       props.session.hostState()?.sessionPath,
                   )}
                   canOpenBranches={props.session.isReady()}
@@ -650,6 +787,13 @@ export function AppShell(props: AppShellProps) {
                   busy={props.session.isBusy() || props.session.isCreatingSession()}
                 />
               </Show>
+              <RolePromptBanner
+                agent={props.session.activeAgent()}
+                ready={props.session.isReady() && !props.session.unavailableTask()}
+                confirming={rolePromptConfirming()}
+                onConfirm={() => void confirmRolePrompt()}
+                onEditRolePrompt={focusRolePromptEditor}
+              />
               <ToolApprovalBanner
                 request={props.session.approval()}
                 onAllow={() => props.session.replyApproval(true)}
@@ -664,16 +808,22 @@ export function AppShell(props: AppShellProps) {
                 }}
               />
               <Show when={props.session.unavailableTask()}>
-                {(task) => (
+                {(_task) => (
                   <div class="session-unavailable" role="status">
                     <span>
-                      <strong>Session unavailable</strong>
-                      <small>{task().sessionPath ?? "This legacy Task has no Session path."}</small>
+                      <strong>找不到这份对话的 Session 文件</strong>
+                      <small>
+                        这通常表示磁盘上的 PI JSONL 被移动或删除了（不是「还没开始聊」——空 Task
+                        本来就不会落盘）。可定位原文件，或新建空 Session 继续。
+                        {props.session.activeAgent()?.sessionPath
+                          ? ` 路径：${props.session.activeAgent()!.sessionPath}`
+                          : ""}
+                      </small>
                     </span>
                     <div>
                       <Button
                         variant="secondary"
-                        disabled={!task().sessionId}
+                        disabled={!props.session.activeAgent()?.sessionId}
                         onClick={() => void props.session.relinkUnavailableTask()}
                       >
                         Locate Session…
@@ -682,7 +832,7 @@ export function AppShell(props: AppShellProps) {
                         variant="primary"
                         onClick={() => void props.session.replaceUnavailableTask()}
                       >
-                        Create new Task
+                        Start new Session
                       </Button>
                     </div>
                   </div>
@@ -716,11 +866,14 @@ export function AppShell(props: AppShellProps) {
                       onEditUser={requestEditUser}
                       onRetryLatest={() => {
                         void props.session.continueTurn().then((ok) => {
-                          if (ok) {
-                            setBranchesRefresh((value) => value + 1);
-                            refreshInspector();
-                          } else {
-                            notifyError("重新执行失败");
+                          // Post-turn inspect/git is handled by wasBusy → schedulePostTurnRefresh.
+                          if (!ok) {
+                            // Only when Retry could not start (busy / navigate cancel / host throw).
+                            // Model Connection error again is still a completed retry — see error bubble.
+                            notifyError(
+                              "无法重试",
+                              "没有启动新的生成。请确认会话就绪后，再点错误条上的 Retry。",
+                            );
                           }
                         });
                       }}
@@ -730,9 +883,14 @@ export function AppShell(props: AppShellProps) {
                       {(workflow) => (
                         <div class="workflow-dock" data-mode="overlay">
                           <WorkflowSteps
-                            disabled={props.session.isCreatingSession()}
+                            disabled={
+                              props.session.isCreatingSession() ||
+                              props.session.isBusy() ||
+                              workflowAdvancing()
+                            }
                             placement="overlay"
                             workflow={workflow()}
+                            advancing={workflowAdvancing()}
                             onStepAdvance={(mode) => void advanceWorkflowStep(mode)}
                             onWorkflowChange={(next, starter) => {
                               void persistWorkflow(next, starter);
@@ -751,19 +909,13 @@ export function AppShell(props: AppShellProps) {
                       modelOptions={props.session.modelOptions()}
                       modelValue={props.session.modelValue()}
                       onStop={() => {
-                        void props.session.abort().then(() => {
-                          setBranchesRefresh((value) => value + 1);
-                          refreshInspector();
-                        });
+                        // wasBusy → schedulePostTurnRefresh covers branches/inspector/HUD.
+                        void props.session.abort();
                       }}
                       onRevert={() => {
                         void props.session.revert().then((ok) => {
-                          if (ok) {
-                            setBranchesRefresh((value) => value + 1);
-                            refreshInspector();
-                          } else {
-                            notifyError("Revert 失败");
-                          }
+                          if (!ok) notifyError("Revert 失败");
+                          // Successful revert ends busy via abort; wasBusy refreshes once.
                         });
                       }}
                       onAutoApproveChange={(unlocked) => {
@@ -774,6 +926,7 @@ export function AppShell(props: AppShellProps) {
                       onSelectWorkspace={startNewTask}
                       onSubmit={() => void props.session.send()}
                       onThinkingChange={(value) => void props.session.setThinkingLevel(value)}
+                      skills={composerSkills()}
                       streaming={props.session.isBusy()}
                       thinkingLevel={props.session.thinkingLabel()}
                       thinkingOptions={props.session.thinkingOptions()}
@@ -824,9 +977,14 @@ export function AppShell(props: AppShellProps) {
                     lead={
                       activeWorkflow() ? (
                         <WorkflowSteps
-                          disabled={props.session.isCreatingSession()}
+                          disabled={
+                            props.session.isCreatingSession() ||
+                            props.session.isBusy() ||
+                            workflowAdvancing()
+                          }
                           placement="gutter"
                           workflow={activeWorkflow()!}
+                          advancing={workflowAdvancing()}
                           onStepAdvance={(mode) => void advanceWorkflowStep(mode)}
                           onWorkflowChange={(next, starter) => {
                             void persistWorkflow(next, starter);
@@ -845,6 +1003,12 @@ export function AppShell(props: AppShellProps) {
                     quotaWindows={hudQuotaWindows()}
                     quotaMessage={hudQuotaMessage()}
                     ready={props.session.isReady()}
+                    agent={props.session.activeAgent()}
+                    rolePromptDisabled={
+                      props.session.isCreatingSession() || Boolean(props.session.unavailableTask())
+                    }
+                    onAgentUpdated={(agent) => props.session.setActiveAgentLocal(agent)}
+                    onRolePromptSaved={() => void onRolePromptSaved()}
                     onReviewChanges={() => openReview()}
                     onOpenInspector={() => {
                       if (!inspectorOpen()) toggleInspectorPanel();
@@ -873,8 +1037,9 @@ export function AppShell(props: AppShellProps) {
                   ready={props.session.isReady()}
                   refreshToken={inspectorRefresh()}
                   tab={props.model.tab()}
+                  agent={props.session.activeAgent()}
                   ignoredSkillNames={
-                    props.model.selectedWorkspaceTask()?.ignoredSkillNames ?? []
+                    props.session.activeAgent()?.skillPolicy.ignoredSkillNames ?? []
                   }
                   onCollapse={() => props.model.setInspectorOpen(false)}
                   onOpenReview={(path) => openReview(path)}
@@ -883,8 +1048,35 @@ export function AppShell(props: AppShellProps) {
               </div>
             </div>
           </div>
+          </Show>
         </div>
       </div>
+
+      <Dialog
+        class="orbit-dialog__content--compact"
+        open={leaveTemplatesConfirm()}
+        title="丢弃未保存的更改"
+        onOpenChange={(open) => {
+          if (!open) setLeaveTemplatesConfirm(false);
+        }}
+      >
+        <div class="confirm-dialog">
+          <header class="confirm-dialog__header">
+            <h2>丢弃未保存的更改？</h2>
+          </header>
+          <div class="confirm-dialog__body">
+            <p>当前模板有未保存的修改。离开模板库将丢弃这些更改。</p>
+          </div>
+          <footer class="confirm-dialog__footer">
+            <Button variant="secondary" onClick={() => setLeaveTemplatesConfirm(false)}>
+              取消
+            </Button>
+            <Button variant="primary" onClick={confirmLeaveTemplates}>
+              丢弃并返回
+            </Button>
+          </footer>
+        </div>
+      </Dialog>
 
       <Dialog
         class="orbit-dialog__content--compact"
@@ -1002,7 +1194,7 @@ export function AppShell(props: AppShellProps) {
 
       <TaskSkillsDialog
         open={skillsOpen()}
-        ignoredSkillNames={props.model.selectedWorkspaceTask()?.ignoredSkillNames ?? []}
+        ignoredSkillNames={props.session.activeAgent()?.skillPolicy.ignoredSkillNames ?? []}
         disabled={props.session.isCreatingSession() || props.session.isBusy()}
         onOpenChange={setSkillsOpen}
         onSetIgnoredSkillNames={(names) => setIgnoredSkillNames(names)}

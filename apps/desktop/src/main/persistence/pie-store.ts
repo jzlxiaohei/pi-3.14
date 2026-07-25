@@ -1,23 +1,34 @@
 import { randomUUID } from "node:crypto";
-import { accessSync } from "node:fs";
+import { accessSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type {
+  Agent,
+  AgentStatus,
+  AgentTemplate,
+  AgentTemplateCreateRequest,
+  AgentTemplateDeleteResult,
+  AgentTemplateResetResult,
+  AgentTemplateSource,
+  AgentTemplateUpdateRequest,
   AppPreferences,
   AppPreferencesUpdate,
   LegacyPanelPreferences,
   ReviewedFileUpdate,
   ReviewedFilesRequest,
+  SkillPolicy,
+  Task,
+  TaskStatus,
   TaskWorkflow,
   WorkspacePreferences,
   WorkspacePreferencesUpdate,
-  WorkspaceTask,
   WorkspaceTaskMoveRequest,
-  WorkspaceTaskStatus,
 } from "../../shared/desktop-contracts";
-import { parseStringArray, parseWorkflow, uniqueStrings } from "./codecs";
+import { SYSTEM_TEMPLATE_SEEDS } from "../../shared/playbook-templates";
+import { rollupTaskStatus } from "../../shared/task-status";
+import { parseSkillPolicy, parseWorkflow, uniqueStrings } from "./codecs";
 import { openDatabase, transaction, type PieDatabase } from "./database";
-import { importLegacyTasks } from "./legacy-task-import";
-import { runMigrations } from "./migrations";
+import { CURRENT_VERSION, readSchemaVersion, runMigrations } from "./migrations";
+import { recoverPreSplitCatalogIfEmpty } from "./recover-pre-split-catalog";
 
 const BROWSER_IMPORT = "renderer-local-storage-v1";
 const TASKS_MIN = 240;
@@ -27,18 +38,44 @@ const INSPECTOR_MAX = 720;
 
 type TaskRow = {
   id: string;
-  parent_task_id: string | null;
   title: string;
   cwd: string;
-  session_id: string | null;
-  session_path: string | null;
-  status: WorkspaceTaskStatus;
+  status: TaskStatus;
   position: number;
   created_at: number;
   updated_at: number;
   archived_at: number | null;
   workflow_json: string | null;
-  ignored_skill_names_json: string;
+};
+
+type AgentRow = {
+  id: string;
+  task_id: string;
+  parent_agent_id: string | null;
+  template_id: string | null;
+  name: string;
+  system_prompt: string;
+  skill_policy_json: string;
+  input_context: string | null;
+  output_context: string | null;
+  session_id: string | null;
+  session_path: string | null;
+  role_prompt_confirmed_at: number | null;
+  status: AgentStatus;
+  position: number;
+  created_at: number;
+  updated_at: number;
+};
+
+type TemplateRow = {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  skill_policy_json: string;
+  source: AgentTemplateSource;
+  created_at: number;
+  updated_at: number;
 };
 
 type AppPreferencesRow = {
@@ -52,24 +89,51 @@ type AppPreferencesRow = {
 };
 
 export type StoreBootstrap = {
-  rootTasks: WorkspaceTask[];
-  activeTask: WorkspaceTask | null;
-  activeRootTaskId: string | null;
+  tasks: Task[];
+  activeTask: Task | null;
+  activeTaskId: string | null;
+  activeAgent: Agent | null;
+  activeAgentId: string | null;
+  agentsByTaskId: Record<string, Agent[]>;
   appPreferences: AppPreferences;
   workspacePreferences: Record<string, WorkspacePreferences>;
 };
 
 export type TreeMutationResult = {
-  rootTasks: WorkspaceTask[];
+  tasks: Task[];
   activeTaskId: string | null;
-  activeRootTaskId: string | null;
+  activeAgentId: string | null;
 };
 
+/**
+ * Open PIE catalog DB.
+ * - version 0: fresh migrate
+ * - version >= 2 and <= CURRENT: in-place migrations (additive)
+ * - version 1 / other pre-split: rename old file (JSONL never deleted) and create fresh
+ * - version > CURRENT: rejected inside runMigrations
+ */
 export function openPieStore(userData: string): PieStore {
-  const database = openDatabase(join(userData, "pie.sqlite3"));
+  const dbPath = join(userData, "pie.sqlite3");
+  let database = openDatabase(dbPath);
   try {
+    const version = readSchemaVersion(database);
+    // Hard-reset only catalogs that predate the Task/Agent split (v2).
+    if (version > 0 && version < 2) {
+      database.close();
+      const backup = join(userData, `pie.sqlite3.pre-agent-split-${Date.now()}`);
+      try {
+        renameSync(dbPath, backup);
+        console.warn(
+          `[pie-store] catalog schema ${version} predates agent split; moved to ${backup}`,
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      database = openDatabase(dbPath);
+    }
     runMigrations(database);
-    importLegacyTasks(database, join(userData, "pie-workspace-tasks.json"));
+    // Greenfield wipe keeps JSONL; rehydrate Task list from pre-split backup once.
+    recoverPreSplitCatalogIfEmpty(database, userData);
     const store = new PieStore(database);
     store.recoverInterrupted();
     return store;
@@ -84,43 +148,63 @@ export class PieStore {
 
   recoverInterrupted(): void {
     transaction(this.database, () => {
-      this.database.prepare("UPDATE tasks SET status = 'interrupted' WHERE status = 'running'").run();
+      this.database
+        .prepare("UPDATE agents SET status = 'interrupted' WHERE status = 'running'")
+        .run();
     });
+    // Recompute task rollups for interrupted agents.
+    const taskIds = this.database
+      .prepare("SELECT DISTINCT task_id FROM agents WHERE status = 'interrupted'")
+      .all()
+      .map((row) => (row as { task_id: string }).task_id);
+    for (const taskId of taskIds) this.recomputeTaskStatus(taskId);
   }
 
-  interruptIfRunning(taskId: string): void {
+  interruptIfRunning(agentId: string): void {
     this.database
-      .prepare("UPDATE tasks SET status = 'interrupted' WHERE id = ? AND status = 'running'")
-      .run(taskId);
+      .prepare("UPDATE agents SET status = 'interrupted' WHERE id = ? AND status = 'running'")
+      .run(agentId);
+    const agent = this.agentRow(agentId);
+    if (agent) this.recomputeTaskStatus(agent.task_id);
   }
 
-  idleIfRunning(taskId: string): void {
+  idleIfRunning(agentId: string): void {
     this.database
-      .prepare("UPDATE tasks SET status = 'idle' WHERE id = ? AND status = 'running'")
-      .run(taskId);
+      .prepare("UPDATE agents SET status = 'idle' WHERE id = ? AND status = 'running'")
+      .run(agentId);
+    const agent = this.agentRow(agentId);
+    if (agent) this.recomputeTaskStatus(agent.task_id);
   }
 
   async bootstrap(): Promise<StoreBootstrap> {
-    const rootTasks = await this.listRootTasks();
-    const activeTaskId = await this.getActiveId();
-    const activeTask = activeTaskId ? await this.get(activeTaskId) : null;
-    const activeRootTaskId = activeTask ? this.rootId(activeTask.id) : null;
+    const tasks = await this.listTasks();
+    const activeTaskId = this.getActiveTaskIdSync();
+    const activeAgentId = this.getActiveAgentIdSync();
+    const activeTask = activeTaskId ? await this.getTask(activeTaskId) : null;
+    const activeAgent = activeAgentId ? await this.getAgent(activeAgentId) : null;
+    const agentsByTaskId: Record<string, Agent[]> = {};
+    if (activeTaskId) {
+      agentsByTaskId[activeTaskId] = await this.listAgents(activeTaskId);
+    }
     const workspacePreferences: Record<string, WorkspacePreferences> = {};
-    for (const cwd of new Set(rootTasks.map((task) => task.cwd))) {
+    for (const cwd of new Set(tasks.map((task) => task.cwd))) {
       workspacePreferences[cwd] = await this.getWorkspacePreferences(cwd);
     }
     return {
-      rootTasks,
+      tasks,
       activeTask,
-      activeRootTaskId,
+      activeTaskId,
+      activeAgent,
+      activeAgentId,
+      agentsByTaskId,
       appPreferences: await this.getAppPreferences(),
       workspacePreferences,
     };
   }
 
-  async listRootTasks(): Promise<WorkspaceTask[]> {
+  async listTasks(): Promise<Task[]> {
     const rows = this.database
-      .prepare("SELECT * FROM tasks WHERE parent_task_id IS NULL ORDER BY position, created_at")
+      .prepare("SELECT * FROM tasks ORDER BY position, created_at")
       .all() as unknown as TaskRow[];
     const grouped = new Map<string, TaskRow[]>();
     for (const row of rows) {
@@ -133,98 +217,204 @@ export class PieStore {
       .flatMap(([, group]) => group.map((row) => this.toTask(row)));
   }
 
-  async listChildren(parentTaskId: string): Promise<WorkspaceTask[]> {
+  async listAgents(taskId: string): Promise<Agent[]> {
     return (
       this.database
-        .prepare("SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY position, created_at")
-        .all(parentTaskId) as unknown as TaskRow[]
-    ).map((row) => this.toTask(row));
+        .prepare("SELECT * FROM agents WHERE task_id = ? ORDER BY position, created_at")
+        .all(taskId) as unknown as AgentRow[]
+    ).map((row) => this.toAgent(row));
   }
 
-  async get(id: string): Promise<WorkspaceTask | null> {
+  async listTemplates(): Promise<AgentTemplate[]> {
+    const rows = this.database
+      .prepare("SELECT * FROM agent_templates")
+      .all() as unknown as TemplateRow[];
+    return rows
+      .map((row) => this.toTemplate(row))
+      .sort((left, right) => {
+        if (left.source !== right.source) {
+          return left.source === "system" ? -1 : 1;
+        }
+        const byName = left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+        return byName || left.id.localeCompare(right.id);
+      });
+  }
+
+  async getTask(id: string): Promise<Task | null> {
     const row = this.database.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as
       | TaskRow
       | undefined;
     return row ? this.toTask(row) : null;
   }
 
-  async getActiveId(): Promise<string | null> {
+  async getAgent(id: string): Promise<Agent | null> {
+    const row = this.agentRow(id);
+    return row ? this.toAgent(row) : null;
+  }
+
+  async getTemplate(id: string): Promise<AgentTemplate | null> {
+    const row = this.database.prepare("SELECT * FROM agent_templates WHERE id = ?").get(id) as
+      | TemplateRow
+      | undefined;
+    return row ? this.toTemplate(row) : null;
+  }
+
+  async createTemplate(input: AgentTemplateCreateRequest): Promise<AgentTemplate> {
+    const name = input.name.trim();
+    if (!name) throw new Error("模板名称不能为空");
+    const now = Date.now();
+    const id = randomUUID();
+    const description = (input.description ?? "").trim();
+    const systemPrompt = input.systemPrompt ?? "";
+    const skillPolicy = normalizeSkillPolicy(input.skillPolicy);
+    this.database
+      .prepare(
+        `INSERT INTO agent_templates(
+          id, name, description, system_prompt, skill_policy_json, source, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'user', ?, ?)`,
+      )
+      .run(id, name, description, systemPrompt, JSON.stringify(skillPolicy), now, now);
+    const created = await this.getTemplate(id);
+    if (!created) throw new Error("创建模板失败");
+    return created;
+  }
+
+  async updateTemplate(input: AgentTemplateUpdateRequest): Promise<AgentTemplate | null> {
+    const existing = await this.getTemplate(input.id);
+    if (!existing) return null;
+
+    const name =
+      input.name !== undefined ? input.name.trim() : existing.name;
+    if (!name) throw new Error("模板名称不能为空");
+    const description =
+      input.description !== undefined ? input.description.trim() : existing.description;
+    const systemPrompt =
+      input.systemPrompt !== undefined ? input.systemPrompt : existing.systemPrompt;
+    const skillPolicy =
+      input.skillPolicy !== undefined
+        ? normalizeSkillPolicy(input.skillPolicy)
+        : existing.skillPolicy;
+    const now = Date.now();
+    this.database
+      .prepare(
+        `UPDATE agent_templates
+         SET name = ?, description = ?, system_prompt = ?, skill_policy_json = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(name, description, systemPrompt, JSON.stringify(skillPolicy), now, input.id);
+    return this.getTemplate(input.id);
+  }
+
+  async deleteTemplate(id: string): Promise<AgentTemplateDeleteResult> {
+    const existing = await this.getTemplate(id);
+    if (!existing) return { ok: false, error: "模板不存在" };
+    if (existing.source === "system") {
+      return { ok: false, error: "系统模板不可删除" };
+    }
+    this.database.prepare("DELETE FROM agent_templates WHERE id = ?").run(id);
+    return { ok: true, id };
+  }
+
+  async duplicateTemplate(id: string): Promise<AgentTemplate | null> {
+    const existing = await this.getTemplate(id);
+    if (!existing) return null;
+    return this.createTemplate({
+      name: `${existing.name} 的副本`,
+      description: existing.description,
+      systemPrompt: existing.systemPrompt,
+      skillPolicy: existing.skillPolicy,
+    });
+  }
+
+  async resetTemplateFactory(id: string): Promise<AgentTemplateResetResult> {
+    const existing = await this.getTemplate(id);
+    if (!existing) return { ok: false, error: "模板不存在" };
+    if (existing.source !== "system") {
+      return { ok: false, error: "仅系统模板可恢复出厂" };
+    }
+    const seed = SYSTEM_TEMPLATE_SEEDS.find((item) => item.id === id);
+    if (!seed) return { ok: false, error: "找不到出厂种子" };
+    const now = Date.now();
+    this.database
+      .prepare(
+        `UPDATE agent_templates
+         SET name = ?, description = '', system_prompt = ?, skill_policy_json = ?, updated_at = ?
+         WHERE id = ? AND source = 'system'`,
+      )
+      .run(seed.name, seed.systemPrompt, JSON.stringify(seed.skillPolicy), now, id);
+    const template = await this.getTemplate(id);
+    if (!template) return { ok: false, error: "恢复出厂失败" };
+    return { ok: true, template };
+  }
+
+  getActiveTaskIdSync(): string | null {
     const row = this.database
       .prepare("SELECT active_task_id FROM app_state WHERE singleton = 1")
       .get() as { active_task_id: string | null };
     return row.active_task_id;
   }
 
-  async create(input: {
+  getActiveAgentIdSync(): string | null {
+    const row = this.database
+      .prepare("SELECT active_agent_id FROM app_state WHERE singleton = 1")
+      .get() as { active_agent_id: string | null };
+    return row.active_agent_id;
+  }
+
+  async getActiveTaskId(): Promise<string | null> {
+    return this.getActiveTaskIdSync();
+  }
+
+  async getActiveAgentId(): Promise<string | null> {
+    return this.getActiveAgentIdSync();
+  }
+
+  async createTask(input: {
     cwd: string;
     title?: string;
-    sessionPath: string;
-    sessionId: string;
-    parentTaskId?: string | null;
-  }): Promise<WorkspaceTask> {
-    if (!input.sessionId || !input.sessionPath) {
-      throw new Error("New PIE Tasks require a persisted PI Session ID and path");
-    }
+    workflow?: TaskWorkflow | null;
+  }): Promise<Task> {
     const now = Date.now();
     const id = randomUUID();
-    const parentTaskId = input.parentTaskId ?? null;
     const folder = input.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? input.cwd;
     transaction(this.database, () => {
-      if (parentTaskId) {
-        this.database
-          .prepare("UPDATE tasks SET position = position + 1 WHERE parent_task_id = ?")
-          .run(parentTaskId);
-      } else {
-        this.database
-          .prepare(
-            "UPDATE tasks SET position = position + 1 WHERE parent_task_id IS NULL AND cwd = ?",
-          )
-          .run(input.cwd);
-      }
+      this.database
+        .prepare("UPDATE tasks SET position = position + 1 WHERE cwd = ?")
+        .run(input.cwd);
       this.database
         .prepare(`
           INSERT INTO tasks(
-            id, parent_task_id, title, cwd, session_id, session_path, status,
-            position, created_at, updated_at, archived_at, workflow_json,
-            ignored_skill_names_json
-          ) VALUES (?, ?, ?, ?, ?, ?, 'idle', 0, ?, ?, NULL, NULL, '[]')
+            id, title, cwd, status, position, created_at, updated_at, archived_at, workflow_json
+          ) VALUES (?, ?, ?, 'idle', 0, ?, ?, NULL, ?)
         `)
         .run(
           id,
-          parentTaskId,
           input.title?.trim() || `New task · ${folder}`,
           input.cwd,
-          input.sessionId,
-          input.sessionPath,
           now,
           now,
+          input.workflow ? JSON.stringify(input.workflow) : null,
         );
       this.database
-        .prepare("UPDATE app_state SET active_task_id = ? WHERE singleton = 1")
+        .prepare("UPDATE app_state SET active_task_id = ?, active_agent_id = NULL WHERE singleton = 1")
         .run(id);
     });
-    return (await this.get(id))!;
+    return (await this.getTask(id))!;
   }
 
-  async update(
+  async updateTask(
     id: string,
-    patch: Partial<
-      Pick<
-        WorkspaceTask,
-        "title" | "cwd" | "sessionPath" | "sessionId" | "status" | "ignoredSkillNames"
-      >
-    > & { workflow?: TaskWorkflow | null },
+    patch: Partial<Pick<Task, "title" | "cwd" | "status">> & {
+      workflow?: TaskWorkflow | null;
+    },
     options: { touchUpdatedAt?: boolean } = {},
-  ): Promise<WorkspaceTask | null> {
-    const previous = await this.get(id);
+  ): Promise<Task | null> {
+    const previous = await this.getTask(id);
     if (!previous) return null;
-    const next = {
+    const next: Task = {
       ...previous,
       title: patch.title === undefined ? previous.title : patch.title,
       cwd: patch.cwd === undefined ? previous.cwd : patch.cwd,
-      sessionPath:
-        patch.sessionPath === undefined ? previous.sessionPath : patch.sessionPath,
-      sessionId: patch.sessionId === undefined ? previous.sessionId : patch.sessionId,
       status: patch.status === undefined ? previous.status : patch.status,
       workflow:
         patch.workflow === null
@@ -232,56 +422,206 @@ export class PieStore {
           : patch.workflow === undefined
             ? previous.workflow
             : patch.workflow,
-      ignoredSkillNames:
-        patch.ignoredSkillNames === undefined
-          ? previous.ignoredSkillNames
-          : uniqueStrings(patch.ignoredSkillNames),
       updatedAt: options.touchUpdatedAt === false ? previous.updatedAt : Date.now(),
     };
     this.database
       .prepare(`
         UPDATE tasks SET
-          title = ?, cwd = ?, session_id = ?, session_path = ?, status = ?,
-          updated_at = ?, workflow_json = ?, ignored_skill_names_json = ?
+          title = ?, cwd = ?, status = ?, updated_at = ?, workflow_json = ?
         WHERE id = ?
       `)
       .run(
         next.title,
         next.cwd,
-        next.sessionId,
-        next.sessionPath,
         next.status,
         next.updatedAt,
         next.workflow ? JSON.stringify(next.workflow) : null,
-        JSON.stringify(next.ignoredSkillNames ?? []),
         id,
       );
-    return this.get(id);
+    return this.getTask(id);
   }
 
-  async setStatus(id: string, status: WorkspaceTaskStatus): Promise<WorkspaceTask | null> {
-    return this.update(id, { status }, { touchUpdatedAt: false });
+  async createAgent(input: {
+    /** Optional fixed id — used so multi-host can bind hostId before the row exists. */
+    id?: string;
+    taskId: string;
+    parentAgentId?: string | null;
+    templateId?: string | null;
+    name: string;
+    systemPrompt: string;
+    skillPolicy?: SkillPolicy;
+    inputContext?: string | null;
+    sessionId: string;
+    sessionPath: string;
+  }): Promise<Agent> {
+    if (!input.sessionId || !input.sessionPath) {
+      throw new Error("New Agents require a persisted PI Session ID and path");
+    }
+    const task = await this.getTask(input.taskId);
+    if (!task) throw new Error(`Unknown task: ${input.taskId}`);
+    const now = Date.now();
+    const id = input.id?.trim() || randomUUID();
+    const skillPolicy = input.skillPolicy ?? { ignoredSkillNames: [] };
+    transaction(this.database, () => {
+      this.database
+        .prepare("UPDATE agents SET position = position + 1 WHERE task_id = ?")
+        .run(input.taskId);
+      this.database
+        .prepare(`
+          INSERT INTO agents(
+            id, task_id, parent_agent_id, template_id, name, system_prompt,
+            skill_policy_json, input_context, output_context, session_id, session_path,
+            role_prompt_confirmed_at, status, position, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 'idle', 0, ?, ?)
+        `)
+        .run(
+          id,
+          input.taskId,
+          input.parentAgentId ?? null,
+          input.templateId ?? null,
+          input.name,
+          input.systemPrompt,
+          JSON.stringify(skillPolicy),
+          input.inputContext ?? null,
+          input.sessionId,
+          input.sessionPath,
+          now,
+          now,
+        );
+    });
+    this.recomputeTaskStatus(input.taskId);
+    return (await this.getAgent(id))!;
+  }
+
+  async updateAgent(
+    id: string,
+    patch: Partial<{
+      name: string;
+      systemPrompt: string;
+      skillPolicy: SkillPolicy;
+      inputContext: string | null;
+      outputContext: string | null;
+      sessionId: string | null;
+      sessionPath: string | null;
+      status: AgentStatus;
+      parentAgentId: string | null;
+      templateId: string | null;
+      rolePromptConfirmedAt: number | null;
+      confirmRolePrompt: boolean;
+    }>,
+    options: { touchUpdatedAt?: boolean } = {},
+  ): Promise<Agent | null> {
+    const previous = await this.getAgent(id);
+    if (!previous) return null;
+    const confirmedAt =
+      patch.confirmRolePrompt === true
+        ? Date.now()
+        : patch.rolePromptConfirmedAt !== undefined
+          ? patch.rolePromptConfirmedAt
+          : previous.rolePromptConfirmedAt;
+    const next = {
+      name: patch.name === undefined ? previous.name : patch.name,
+      systemPrompt:
+        patch.systemPrompt === undefined ? previous.systemPrompt : patch.systemPrompt,
+      skillPolicy:
+        patch.skillPolicy === undefined ? previous.skillPolicy : patch.skillPolicy,
+      inputContext:
+        patch.inputContext === undefined ? previous.inputContext : patch.inputContext,
+      outputContext:
+        patch.outputContext === undefined ? previous.outputContext : patch.outputContext,
+      sessionId: patch.sessionId === undefined ? previous.sessionId : patch.sessionId,
+      sessionPath:
+        patch.sessionPath === undefined ? previous.sessionPath : patch.sessionPath,
+      status: patch.status === undefined ? previous.status : patch.status,
+      parentAgentId:
+        patch.parentAgentId === undefined ? previous.parentAgentId : patch.parentAgentId,
+      templateId: patch.templateId === undefined ? previous.templateId : patch.templateId,
+      rolePromptConfirmedAt: confirmedAt,
+      updatedAt: options.touchUpdatedAt === false ? previous.updatedAt : Date.now(),
+    };
+    this.database
+      .prepare(`
+        UPDATE agents SET
+          name = ?, system_prompt = ?, skill_policy_json = ?,
+          input_context = ?, output_context = ?, session_id = ?, session_path = ?,
+          status = ?, parent_agent_id = ?, template_id = ?,
+          role_prompt_confirmed_at = ?, updated_at = ?
+        WHERE id = ?
+      `)
+      .run(
+        next.name,
+        next.systemPrompt,
+        JSON.stringify(next.skillPolicy),
+        next.inputContext,
+        next.outputContext,
+        next.sessionId,
+        next.sessionPath,
+        next.status,
+        next.parentAgentId,
+        next.templateId,
+        next.rolePromptConfirmedAt,
+        next.updatedAt,
+        id,
+      );
+    this.recomputeTaskStatus(previous.taskId);
+    return this.getAgent(id);
+  }
+
+  async setAgentStatus(id: string, status: AgentStatus): Promise<Agent | null> {
+    return this.updateAgent(id, { status }, { touchUpdatedAt: false });
+  }
+
+  async setActive(taskId: string | null, agentId: string | null): Promise<void> {
+    this.database
+      .prepare(
+        "UPDATE app_state SET active_task_id = ?, active_agent_id = ? WHERE singleton = 1",
+      )
+      .run(taskId, agentId);
   }
 
   async setActiveTask(id: string | null): Promise<void> {
-    this.database
-      .prepare("UPDATE app_state SET active_task_id = ? WHERE singleton = 1")
-      .run(id);
+    await this.setActive(id, this.getActiveAgentIdSync());
   }
 
-  async moveRootTask(request: WorkspaceTaskMoveRequest): Promise<WorkspaceTask[]> {
+  async bindStepAgent(taskId: string, stepId: string, agentId: string): Promise<Task | null> {
+    const task = await this.getTask(taskId);
+    if (!task?.workflow) return null;
+    const steps = task.workflow.steps.map((step) =>
+      step.id === stepId ? { ...step, agentId } : step,
+    );
+    return this.updateTask(taskId, {
+      workflow: { ...task.workflow, steps },
+    });
+  }
+
+  recomputeTaskStatus(taskId: string): void {
+    const task = this.database.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as
+      | TaskRow
+      | undefined;
+    if (!task) return;
+    const agents = this.database
+      .prepare("SELECT status FROM agents WHERE task_id = ?")
+      .all(taskId) as unknown as Array<{ status: AgentStatus }>;
+    const mapped = this.toTask(task);
+    const next = rollupTaskStatus(mapped, agents);
+    if (next !== task.status) {
+      this.database
+        .prepare("UPDATE tasks SET status = ? WHERE id = ?")
+        .run(next, taskId);
+    }
+  }
+
+  async moveTask(request: WorkspaceTaskMoveRequest): Promise<Task[]> {
     const task = this.taskRow(request.taskId);
-    if (!task || task.parent_task_id !== null) throw new Error("Only Root Tasks can be reordered");
-    if (request.beforeTaskId === task.id) return this.listRootTasks();
+    if (!task) throw new Error("Unknown task");
+    if (request.beforeTaskId === task.id) return this.listTasks();
     const before = request.beforeTaskId ? this.taskRow(request.beforeTaskId) : null;
-    if (before && (before.parent_task_id !== null || before.cwd !== task.cwd)) {
+    if (before && before.cwd !== task.cwd) {
       throw new Error("Tasks can only be reordered within one workspace");
     }
     transaction(this.database, () => {
       const siblings = this.database
-        .prepare(
-          "SELECT id FROM tasks WHERE parent_task_id IS NULL AND cwd = ? ORDER BY position, created_at",
-        )
+        .prepare("SELECT id FROM tasks WHERE cwd = ? ORDER BY position, created_at")
         .all(task.cwd)
         .map((row) => (row as { id: string }).id)
         .filter((id) => id !== task.id);
@@ -290,43 +630,48 @@ export class PieStore {
       const update = this.database.prepare("UPDATE tasks SET position = ? WHERE id = ?");
       siblings.forEach((id, position) => update.run(position, id));
     });
-    return this.listRootTasks();
+    return this.listTasks();
   }
 
-  async archiveTree(id: string): Promise<TreeMutationResult> {
-    const ids = this.subtreeIds(id);
-    if (ids.length === 0) return this.treeResult();
+  async archiveTask(id: string): Promise<TreeMutationResult> {
+    const task = await this.getTask(id);
+    if (!task) return this.treeResult();
+    const now = Date.now();
     transaction(this.database, () => {
-      const placeholders = ids.map(() => "?").join(", ");
       this.database
-        .prepare(`UPDATE tasks SET archived_at = COALESCE(archived_at, ?) WHERE id IN (${placeholders})`)
-        .run(Date.now(), ...ids);
-      const active = this.activeIdSync();
-      if (active && ids.includes(active)) {
-        const fallback = this.firstActiveRootId();
+        .prepare("UPDATE tasks SET archived_at = COALESCE(archived_at, ?) WHERE id = ?")
+        .run(now, id);
+      // Agents inherit archive via parent task hide; no separate agent archived_at in v1 schema.
+      const activeTask = this.getActiveTaskIdSync();
+      const activeAgent = this.getActiveAgentIdSync();
+      let clearTask = activeTask === id;
+      let clearAgent = false;
+      if (activeAgent) {
+        const agent = this.agentRow(activeAgent);
+        if (agent?.task_id === id) clearAgent = true;
+      }
+      if (clearTask || clearAgent) {
+        const fallback = this.firstActiveTaskId();
         this.database
-          .prepare("UPDATE app_state SET active_task_id = ? WHERE singleton = 1")
+          .prepare(
+            "UPDATE app_state SET active_task_id = ?, active_agent_id = NULL WHERE singleton = 1",
+          )
           .run(fallback);
       }
     });
     return this.treeResult();
   }
 
-  async restoreTree(id: string): Promise<TreeMutationResult> {
-    const ids = this.subtreeIds(id);
-    if (ids.length === 0) return this.treeResult();
-    const placeholders = ids.map(() => "?").join(", ");
-    transaction(this.database, () => {
-      this.database.prepare(`UPDATE tasks SET archived_at = NULL WHERE id IN (${placeholders})`).run(...ids);
-    });
+  async restoreTask(id: string): Promise<TreeMutationResult> {
+    this.database.prepare("UPDATE tasks SET archived_at = NULL WHERE id = ?").run(id);
     return this.treeResult();
   }
 
-  async relinkSession(id: string, sessionPath: string): Promise<WorkspaceTask> {
-    this.database.prepare("UPDATE tasks SET session_path = ? WHERE id = ?").run(sessionPath, id);
-    const task = await this.get(id);
-    if (!task) throw new Error(`Unknown task: ${id}`);
-    return task;
+  async relinkAgentSession(id: string, sessionPath: string): Promise<Agent> {
+    this.database.prepare("UPDATE agents SET session_path = ? WHERE id = ?").run(sessionPath, id);
+    const agent = await this.getAgent(id);
+    if (!agent) throw new Error(`Unknown agent: ${id}`);
+    return agent;
   }
 
   async getAppPreferences(): Promise<AppPreferences> {
@@ -398,20 +743,20 @@ export class PieStore {
     return next;
   }
 
-  async getDraft(taskId: string): Promise<string> {
+  async getDraft(agentId: string): Promise<string> {
     const row = this.database
-      .prepare("SELECT draft FROM task_drafts WHERE task_id = ?")
-      .get(taskId) as { draft: string } | undefined;
+      .prepare("SELECT draft FROM agent_drafts WHERE agent_id = ?")
+      .get(agentId) as { draft: string } | undefined;
     return row?.draft ?? "";
   }
 
-  async saveDraft(taskId: string, draft: string): Promise<void> {
+  async saveDraft(agentId: string, draft: string): Promise<void> {
     this.database
       .prepare(`
-        INSERT INTO task_drafts(task_id, draft, updated_at) VALUES (?, ?, ?)
-        ON CONFLICT(task_id) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at
+        INSERT INTO agent_drafts(agent_id, draft, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(agent_id) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at
       `)
-      .run(taskId, draft, Date.now());
+      .run(agentId, draft, Date.now());
   }
 
   async getReviewedPaths(request: ReviewedFilesRequest): Promise<string[]> {
@@ -486,19 +831,24 @@ export class PieStore {
   }
 
   private taskRow(id: string): TaskRow | null {
-    return (this.database.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined) ?? null;
+    return (
+      (this.database.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined) ??
+      null
+    );
   }
 
-  private toTask(row: TaskRow): WorkspaceTask {
-    const task: WorkspaceTask = {
+  private agentRow(id: string): AgentRow | null {
+    return (
+      (this.database.prepare("SELECT * FROM agents WHERE id = ?").get(id) as AgentRow | undefined) ??
+      null
+    );
+  }
+
+  private toTask(row: TaskRow): Task {
+    const task: Task = {
       id: row.id,
-      parentTaskId: row.parent_task_id,
-      rootTaskId: this.rootId(row.id) ?? row.id,
       title: row.title,
       cwd: row.cwd,
-      sessionId: row.session_id,
-      sessionPath: row.session_path,
-      sessionAvailability: fileAvailable(row.session_path) ? "available" : "missing",
       status: row.status,
       position: row.position,
       createdAt: row.created_at,
@@ -507,54 +857,54 @@ export class PieStore {
     if (row.archived_at !== null) task.archivedAt = row.archived_at;
     const workflow = parseWorkflow(row.workflow_json);
     if (workflow) task.workflow = workflow;
-    const ignored = parseStringArray(row.ignored_skill_names_json);
-    if (ignored.length > 0) task.ignoredSkillNames = ignored;
     return task;
   }
 
-  private activeIdSync(): string | null {
-    return (
-      this.database.prepare("SELECT active_task_id FROM app_state WHERE singleton = 1").get() as {
-        active_task_id: string | null;
-      }
-    ).active_task_id;
+  private toAgent(row: AgentRow): Agent {
+    return {
+      id: row.id,
+      taskId: row.task_id,
+      parentAgentId: row.parent_agent_id,
+      templateId: row.template_id,
+      name: row.name,
+      systemPrompt: row.system_prompt,
+      skillPolicy: parseSkillPolicy(row.skill_policy_json),
+      inputContext: row.input_context,
+      outputContext: row.output_context,
+      sessionId: row.session_id,
+      sessionPath: row.session_path,
+      sessionAvailability: fileAvailable(row.session_path) ? "available" : "missing",
+      rolePromptConfirmedAt:
+        row.role_prompt_confirmed_at === undefined || row.role_prompt_confirmed_at === null
+          ? null
+          : Number(row.role_prompt_confirmed_at),
+      status: row.status,
+      position: row.position,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
-  private rootId(id: string): string | null {
-    const row = this.database
-      .prepare(`
-        WITH RECURSIVE ancestors(id, parent_task_id) AS (
-          SELECT id, parent_task_id FROM tasks WHERE id = ?
-          UNION ALL
-          SELECT tasks.id, tasks.parent_task_id
-          FROM tasks JOIN ancestors ON tasks.id = ancestors.parent_task_id
-        )
-        SELECT id FROM ancestors WHERE parent_task_id IS NULL LIMIT 1
-      `)
-      .get(id) as { id: string } | undefined;
-    return row?.id ?? null;
+  private toTemplate(row: TemplateRow): AgentTemplate {
+    const source: AgentTemplateSource = row.source === "user" ? "user" : "system";
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description ?? "",
+      systemPrompt: row.system_prompt,
+      skillPolicy: parseSkillPolicy(row.skill_policy_json),
+      source,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
-  private subtreeIds(id: string): string[] {
-    return this.database
-      .prepare(`
-        WITH RECURSIVE subtree(id) AS (
-          SELECT id FROM tasks WHERE id = ?
-          UNION ALL
-          SELECT tasks.id FROM tasks JOIN subtree ON tasks.parent_task_id = subtree.id
-        )
-        SELECT id FROM subtree
-      `)
-      .all(id)
-      .map((row) => (row as { id: string }).id);
-  }
-
-  private firstActiveRootId(): string | null {
+  private firstActiveTaskId(): string | null {
     const rows = this.database
       .prepare(`
         SELECT id, cwd, created_at, position
         FROM tasks
-        WHERE parent_task_id IS NULL AND archived_at IS NULL
+        WHERE archived_at IS NULL
         ORDER BY position, created_at
       `)
       .all() as unknown as Array<{ id: string; cwd: string; created_at: number; position: number }>;
@@ -571,11 +921,10 @@ export class PieStore {
   }
 
   private async treeResult(): Promise<TreeMutationResult> {
-    const activeTaskId = this.activeIdSync();
     return {
-      rootTasks: await this.listRootTasks(),
-      activeTaskId,
-      activeRootTaskId: activeTaskId ? this.rootId(activeTaskId) : null,
+      tasks: await this.listTasks(),
+      activeTaskId: this.getActiveTaskIdSync(),
+      activeAgentId: this.getActiveAgentIdSync(),
     };
   }
 }
@@ -615,3 +964,10 @@ function bool(value: boolean): number {
 function clamp(value: number, min: number, max: number): number {
   return Math.round(Math.min(max, Math.max(min, value)));
 }
+
+function normalizeSkillPolicy(policy?: SkillPolicy | null): SkillPolicy {
+  return {
+    ignoredSkillNames: uniqueStrings(policy?.ignoredSkillNames ?? []),
+  };
+}
+

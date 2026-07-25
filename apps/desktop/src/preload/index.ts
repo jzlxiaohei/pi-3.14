@@ -61,27 +61,94 @@ const api = {
     writeText: (text: string) =>
       ipcRenderer.invoke("clipboard:write-text", text) as Promise<{ ok: true }>,
   },
+  /**
+   * Open a markdown / chat href without navigating the renderer SPA.
+   * http(s)/mailto → system browser; relative/absolute paths → OS default app.
+   */
+  shell: {
+    openHref: (href: string) =>
+      ipcRenderer.invoke("shell:open-href", href) as Promise<
+        { ok: true; kind: "external" | "path" } | { ok: false; error: string }
+      >,
+  },
   tasks: {
     bootstrap: (request?: PiTasksBootstrapRequest) =>
       ipcRenderer.invoke("pi:tasks:bootstrap", request) as Promise<PiTasksBootstrap>,
     list: () => ipcRenderer.invoke("pi:tasks:list") as Promise<WorkspaceTask[]>,
-    listChildren: (parentTaskId: string) =>
-      ipcRenderer.invoke("pi:tasks:list-children", parentTaskId) as Promise<WorkspaceTask[]>,
     activate: (taskId: string, options?: { force?: boolean }) =>
       ipcRenderer.invoke("pi:tasks:activate", taskId, options) as Promise<PiActivateTaskResult>,
     update: (request: WorkspaceTaskUpdate) =>
       ipcRenderer.invoke("pi:tasks:update", request) as Promise<WorkspaceTask | null>,
     move: (request: WorkspaceTaskMoveRequest) =>
       ipcRenderer.invoke("pi:tasks:move", request) as Promise<WorkspaceTask[]>,
-    relink: (taskId: string) =>
-      ipcRenderer.invoke("pi:tasks:relink", taskId) as Promise<WorkspaceTaskRelinkResult>,
     archive: (taskId: string) =>
       ipcRenderer.invoke("pi:tasks:archive", taskId) as Promise<PiTasksArchiveResult>,
     unarchive: (taskId: string) =>
       ipcRenderer.invoke("pi:tasks:unarchive", taskId) as Promise<PiTasksArchiveResult>,
   },
+  agents: {
+    list: (taskId: string) =>
+      ipcRenderer.invoke("pi:agents:list", taskId) as Promise<
+        import("../shared/desktop-contracts").Agent[]
+      >,
+    activate: (agentId: string, options?: { force?: boolean }) =>
+      ipcRenderer.invoke("pi:agents:activate", agentId, options) as Promise<PiActivateTaskResult>,
+    create: (request: import("../shared/desktop-contracts").AgentCreateFromTemplateRequest) =>
+      ipcRenderer.invoke("pi:agents:create", request) as Promise<
+        import("../shared/desktop-contracts").Agent
+      >,
+    spawn: (request: import("../shared/desktop-contracts").AgentSpawnChildRequest) =>
+      ipcRenderer.invoke("pi:agents:spawn", request) as Promise<
+        import("../shared/desktop-contracts").Agent
+      >,
+    update: (request: import("../shared/desktop-contracts").AgentUpdateRequest) =>
+      ipcRenderer.invoke("pi:agents:update", request) as Promise<
+        import("../shared/desktop-contracts").Agent | null
+      >,
+    confirmRolePrompt: (agentId: string) =>
+      ipcRenderer.invoke("pi:agents:confirm-role-prompt", agentId) as Promise<
+        import("../shared/desktop-contracts").Agent | null
+      >,
+    restoreRolePrompt: (agentId: string) =>
+      ipcRenderer.invoke("pi:agents:restore-role-prompt", agentId) as Promise<
+        import("../shared/desktop-contracts").AgentRestoreRolePromptResult
+      >,
+    advanceWorkflow: (request: import("../shared/desktop-contracts").AdvanceWorkflowRequest) =>
+      ipcRenderer.invoke("pi:agents:advance-workflow", request) as Promise<
+        import("../shared/desktop-contracts").AdvanceWorkflowResult
+      >,
+    relink: (agentId: string) =>
+      ipcRenderer.invoke("pi:agents:relink", agentId) as Promise<WorkspaceTaskRelinkResult>,
+  },
+  templates: {
+    list: () =>
+      ipcRenderer.invoke("pi:templates:list") as Promise<
+        import("../shared/desktop-contracts").AgentTemplate[]
+      >,
+    create: (request: import("../shared/desktop-contracts").AgentTemplateCreateRequest) =>
+      ipcRenderer.invoke("pi:templates:create", request) as Promise<
+        import("../shared/desktop-contracts").AgentTemplate
+      >,
+    update: (request: import("../shared/desktop-contracts").AgentTemplateUpdateRequest) =>
+      ipcRenderer.invoke("pi:templates:update", request) as Promise<
+        import("../shared/desktop-contracts").AgentTemplate | null
+      >,
+    delete: (id: string) =>
+      ipcRenderer.invoke("pi:templates:delete", id) as Promise<
+        import("../shared/desktop-contracts").AgentTemplateDeleteResult
+      >,
+    duplicate: (id: string) =>
+      ipcRenderer.invoke("pi:templates:duplicate", id) as Promise<
+        import("../shared/desktop-contracts").AgentTemplate | null
+      >,
+    resetFactory: (id: string) =>
+      ipcRenderer.invoke("pi:templates:reset-factory", id) as Promise<
+        import("../shared/desktop-contracts").AgentTemplateResetResult
+      >,
+  },
   session: {
-    abort: () => ipcRenderer.invoke("pi:session:abort") as Promise<void>,
+    abort: (options?: { agentId?: string }) =>
+      ipcRenderer.invoke("pi:session:abort", options) as Promise<void>,
     create: (options?: PiSessionCreateOptions) =>
       ipcRenderer.invoke("pi:session:create", options) as Promise<PiSessionCreateResult>,
     dispose: () => ipcRenderer.invoke("pi:session:dispose") as Promise<void>,
@@ -99,8 +166,8 @@ const api = {
       ipcRenderer.invoke("pi:session:get-auto-approve") as Promise<{ unlocked: boolean }>,
     getTimeline: () =>
       ipcRenderer.invoke("pi:session:get-timeline") as Promise<PiTimelineSnapshot>,
-    inspect: () =>
-      ipcRenderer.invoke("pi:session:inspect") as Promise<PiSessionInspectResult>,
+    inspect: (options?: { detail?: "full" | "hud" }) =>
+      ipcRenderer.invoke("pi:session:inspect", options) as Promise<PiSessionInspectResult>,
     navigate: (request: PiSessionNavigateRequest) =>
       ipcRenderer.invoke("pi:session:navigate", request) as Promise<PiSessionNavigateResult>,
     prepareBranchSummary: () =>
@@ -117,8 +184,11 @@ const api = {
       ipcRenderer.invoke("pi:session:get-pending-approval") as Promise<PiToolApprovalRequest | null>,
     pickWorkspace: () =>
       ipcRenderer.invoke("pi:session:pick-workspace") as Promise<PiWorkspacePickResult>,
-    onEvent(listener: (event: PiHostEvent) => void) {
-      const handler = (_event: Electron.IpcRendererEvent, piEvent: PiHostEvent) => listener(piEvent);
+    onEvent(listener: (payload: { hostId: string; event: PiHostEvent }) => void) {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        payload: { hostId: string; event: PiHostEvent },
+      ) => listener(payload);
       ipcRenderer.on("pi:session:event", handler);
       return () => ipcRenderer.off("pi:session:event", handler);
     },
@@ -137,10 +207,10 @@ const api = {
     replyToolApproval: (reply: PiToolApprovalReply) => {
       ipcRenderer.send("pi:session:tool-approval-reply", reply);
     },
-    prompt: (text: string) =>
-      ipcRenderer.invoke("pi:session:prompt", text) as Promise<PiPromptResult>,
-    continueTurn: () =>
-      ipcRenderer.invoke("pi:session:continue") as Promise<PiPromptResult>,
+    prompt: (text: string, options?: { agentId?: string }) =>
+      ipcRenderer.invoke("pi:session:prompt", text, options) as Promise<PiPromptResult>,
+    continueTurn: (options?: { agentId?: string }) =>
+      ipcRenderer.invoke("pi:session:continue", options) as Promise<PiPromptResult>,
   },
   preferences: {
     updateApp: (patch: AppPreferencesUpdate) =>

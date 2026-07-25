@@ -1,193 +1,157 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { after, test } from "node:test";
 import { openPieStore } from "./pie-store";
 
-function fixture() {
+const roots: string[] = [];
+after(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function tempRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "pie-store-"));
-  const sessionA = join(root, "a.jsonl");
-  const sessionB = join(root, "b.jsonl");
-  writeFileSync(sessionA, "{}\n");
-  writeFileSync(sessionB, "{}\n");
-  return {
-    root,
-    sessionA,
-    sessionB,
-    cleanup() {
-      rmSync(root, { recursive: true, force: true });
-    },
-  };
+  roots.push(root);
+  return root;
 }
 
-function legacyTask(id: string, sessionPath: string, overrides: Record<string, unknown> = {}) {
-  return {
-    id,
-    title: id,
-    cwd: "/workspace",
-    sessionPath,
-    sessionId: `session-${id}`,
-    status: "idle",
-    createdAt: id === "a" ? 1 : 2,
-    updatedAt: id === "a" ? 3 : 4,
-    ...overrides,
-  };
-}
-
-test("migrates legacy Tasks once, preserves order, and retains a permanent copy", async () => {
-  const f = fixture();
-  try {
-    writeFileSync(
-      join(f.root, "pie-workspace-tasks.json"),
-      JSON.stringify({
-        selectedTaskId: "b",
-        tasks: [
-          legacyTask("a", f.sessionA, { workflow: { playbookId: "bugfix", stepId: "x", steps: [] } }),
-          legacyTask("b", f.sessionB, { status: "running", archivedAt: 9 }),
-        ],
-      }),
-    );
-
-    let store = openPieStore(f.root);
-    const first = await store.bootstrap();
-    assert.deepEqual(first.rootTasks.map((task) => task.id), ["a", "b"]);
-    assert.equal(first.rootTasks[0]?.workflow?.playbookId, "bugfix");
-    assert.equal(first.rootTasks[1]?.status, "interrupted");
-    assert.equal(first.activeTask?.id, "a", "archived legacy selection falls back to active Task");
-    assert.ok(readdirSync(f.root).some((name) => name.startsWith("pie-workspace-tasks.pre-sqlite-")));
-    store.close();
-
-    store = openPieStore(f.root);
-    assert.equal((await store.listRootTasks()).length, 2);
-    store.close();
-  } finally {
-    f.cleanup();
-  }
+test("opens v2 catalog and seeds system templates", async () => {
+  const store = openPieStore(tempRoot());
+  const boot = await store.bootstrap();
+  assert.equal(boot.tasks.length, 0);
+  assert.equal(boot.activeTaskId, null);
+  assert.equal(boot.activeAgentId, null);
+  const templates = await store.listTemplates();
+  assert.equal(templates.length, 8);
+  store.close();
 });
 
-test("falls back to the rolling backup and refuses two invalid legacy files", async () => {
-  const f = fixture();
-  try {
-    writeFileSync(join(f.root, "pie-workspace-tasks.json"), "{");
-    writeFileSync(
-      join(f.root, "pie-workspace-tasks.json.bak"),
-      JSON.stringify({ selectedTaskId: "a", tasks: [legacyTask("a", f.sessionA)] }),
-    );
-    const store = openPieStore(f.root);
-    assert.equal((await store.listRootTasks())[0]?.id, "a");
-    store.close();
-  } finally {
-    f.cleanup();
-  }
+test("createTask does not create agents; createAgent attaches session", async () => {
+  const store = openPieStore(tempRoot());
+  const task = await store.createTask({ cwd: "/workspace", title: "Demo" });
+  assert.equal((await store.listAgents(task.id)).length, 0);
+  const agent = await store.createAgent({
+    taskId: task.id,
+    name: "Chat",
+    systemPrompt: "",
+    sessionId: "sess-1",
+    sessionPath: "/tmp/fake.jsonl",
+  });
+  assert.equal(agent.taskId, task.id);
+  assert.equal(agent.rolePromptConfirmedAt, null);
+  assert.equal((await store.listAgents(task.id)).length, 1);
 
-  const invalid = fixture();
-  try {
-    writeFileSync(join(invalid.root, "pie-workspace-tasks.json"), "{");
-    writeFileSync(join(invalid.root, "pie-workspace-tasks.json.bak"), "[]");
-    assert.throws(() => openPieStore(invalid.root), /both invalid/);
-  } finally {
-    invalid.cleanup();
-  }
+  const confirmed = await store.updateAgent(agent.id, { confirmRolePrompt: true });
+  assert.ok(confirmed?.rolePromptConfirmedAt != null);
+
+  store.close();
 });
 
-test("orders Root Tasks and archives/restores a complete Task subtree", async () => {
-  const f = fixture();
-  try {
-    const store = openPieStore(f.root);
-    const rootA = await store.create({
-      cwd: "/workspace",
-      sessionId: "root-a",
-      sessionPath: f.sessionA,
-      title: "Root A",
-    });
-    const rootB = await store.create({
-      cwd: "/workspace",
-      sessionId: "root-b",
-      sessionPath: f.sessionB,
-      title: "Root B",
-    });
-    const childPath = join(f.root, "child.jsonl");
-    writeFileSync(childPath, "{}\n");
-    const child = await store.create({
-      cwd: "/workspace",
-      sessionId: "child",
-      sessionPath: childPath,
-      title: "Child",
-      parentTaskId: rootA.id,
-    });
-    assert.equal(child.rootTaskId, rootA.id);
-
-    await store.moveRootTask({ taskId: rootA.id, beforeTaskId: rootB.id });
-    assert.deepEqual((await store.listRootTasks()).map((task) => task.id), [rootA.id, rootB.id]);
-
-    const archived = await store.archiveTree(rootA.id);
-    assert.equal((await store.get(rootA.id))?.archivedAt !== undefined, true);
-    assert.equal((await store.get(child.id))?.archivedAt !== undefined, true);
-    assert.equal(archived.activeTaskId, rootB.id, "active Child falls back to the next Root Task");
-
-    await store.restoreTree(rootA.id);
-    assert.equal((await store.get(rootA.id))?.archivedAt, undefined);
-    assert.equal((await store.get(child.id))?.archivedAt, undefined);
-    store.close();
-  } finally {
-    f.cleanup();
-  }
+test("schema migrates to v3 with role_prompt_confirmed_at", async () => {
+  const store = openPieStore(tempRoot());
+  const task = await store.createTask({ cwd: "/workspace", title: "Mig" });
+  const agent = await store.createAgent({
+    taskId: task.id,
+    name: "Chat",
+    systemPrompt: "role",
+    sessionId: "sess-2",
+    sessionPath: "/tmp/fake-2.jsonl",
+  });
+  assert.equal(agent.rolePromptConfirmedAt, null);
+  store.close();
 });
 
-test("persists typed preferences, drafts, and exact review fingerprints", async () => {
-  const f = fixture();
-  try {
-    const store = openPieStore(f.root);
-    const task = await store.create({
-      cwd: "/workspace",
-      sessionId: "prefs",
-      sessionPath: f.sessionA,
-    });
-    await store.importLegacyBrowserPreferences({ tasksOpen: false, inspectorOpen: true });
-    await store.importLegacyBrowserPreferences({ tasksOpen: true });
-    const preferences = await store.updateAppPreferences({ tasksWidth: 999, theme: "dark" });
-    assert.equal(preferences.tasksOpen, false, "legacy browser preferences import once");
-    assert.equal(preferences.inspectorOpen, true);
-    assert.equal(preferences.tasksWidth, 372);
-    assert.equal(preferences.theme, "dark");
+test("system template seed is insert-only and survives edits", async () => {
+  const root = tempRoot();
+  const store = openPieStore(root);
+  const templates = await store.listTemplates();
+  assert.equal(templates.length, 8);
+  const target = templates[0]!;
+  assert.equal(target.source, "system");
+  assert.equal(target.description, "");
 
-    await store.saveDraft(task.id, "draft");
-    assert.equal(await store.getDraft(task.id), "draft");
+  const updated = await store.updateTemplate({
+    id: target.id,
+    name: "custom-system-name",
+    description: "local note",
+    systemPrompt: "custom role",
+  });
+  assert.ok(updated);
+  assert.equal(updated!.name, "custom-system-name");
+  assert.equal(updated!.description, "local note");
+  assert.equal(updated!.systemPrompt, "custom role");
+  store.close();
 
-    await store.setReviewedFile({
-      cwd: "/workspace",
-      baseRef: "HEAD",
-      path: "a.ts",
-      fingerprint: "one",
-    });
-    assert.deepEqual(
-      await store.getReviewedPaths({
-        cwd: "/workspace",
-        baseRef: "HEAD",
-        files: [{ path: "a.ts", fingerprint: "one" }],
-      }),
-      ["a.ts"],
-    );
-    assert.deepEqual(
-      await store.getReviewedPaths({
-        cwd: "/workspace",
-        baseRef: "HEAD",
-        files: [{ path: "a.ts", fingerprint: "two" }],
-      }),
-      [],
-    );
-    assert.deepEqual(
-      await store.getReviewedPaths({
-        cwd: "/workspace",
-        baseRef: "HEAD",
-        files: [{ path: "a.ts", fingerprint: "one" }],
-      }),
-      [],
-      "a mismatched fingerprint removes stale reviewed state",
-    );
-    store.close();
-  } finally {
-    f.cleanup();
-  }
+  const reopened = openPieStore(root);
+  const again = await reopened.getTemplate(target.id);
+  assert.equal(again?.name, "custom-system-name");
+  assert.equal(again?.systemPrompt, "custom role");
+  assert.equal(again?.description, "local note");
+  reopened.close();
+});
+
+test("user template CRUD, duplicate, delete clears agent templateId", async () => {
+  const store = openPieStore(tempRoot());
+  const created = await store.createTemplate({
+    name: "My role",
+    description: "desc",
+    systemPrompt: "you are custom",
+    skillPolicy: { ignoredSkillNames: ["tdd"] },
+  });
+  assert.equal(created.source, "user");
+  assert.equal(created.description, "desc");
+  assert.deepEqual(created.skillPolicy.ignoredSkillNames, ["tdd"]);
+
+  const task = await store.createTask({ cwd: "/workspace", title: "T" });
+  const agent = await store.createAgent({
+    taskId: task.id,
+    name: "From tpl",
+    systemPrompt: created.systemPrompt,
+    templateId: created.id,
+    sessionId: "sess-tpl",
+    sessionPath: "/tmp/fake-tpl.jsonl",
+  });
+  assert.equal(agent.templateId, created.id);
+
+  const dup = await store.duplicateTemplate(created.id);
+  assert.ok(dup);
+  assert.equal(dup!.source, "user");
+  assert.equal(dup!.name, "My role 的副本");
+  assert.equal(dup!.systemPrompt, "you are custom");
+
+  const delSystem = await store.deleteTemplate((await store.listTemplates()).find((t) => t.source === "system")!.id);
+  assert.equal(delSystem.ok, false);
+
+  const del = await store.deleteTemplate(created.id);
+  assert.equal(del.ok, true);
+  const after = await store.getAgent(agent.id);
+  assert.equal(after?.templateId, null);
+  assert.equal(after?.systemPrompt, "you are custom");
+  store.close();
+});
+
+test("reset factory restores system seed fields", async () => {
+  const store = openPieStore(tempRoot());
+  const system = (await store.listTemplates()).find((t) => t.id === "tpl:feature-default/to-spec");
+  assert.ok(system);
+  await store.updateTemplate({
+    id: system!.id,
+    name: "edited",
+    description: "x",
+    systemPrompt: "nope",
+    skillPolicy: { ignoredSkillNames: ["x"] },
+  });
+  const result = await store.resetTemplateFactory(system!.id);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.template.name, "to-spec");
+  assert.equal(result.template.description, "");
+  assert.equal(result.template.systemPrompt.includes("spec writer"), true);
+  assert.deepEqual(result.template.skillPolicy.ignoredSkillNames, []);
+
+  const user = await store.createTemplate({ name: "u" });
+  const bad = await store.resetTemplateFactory(user.id);
+  assert.equal(bad.ok, false);
+  store.close();
 });

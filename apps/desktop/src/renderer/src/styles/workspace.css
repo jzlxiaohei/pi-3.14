@@ -1364,38 +1364,350 @@ body[data-panel-resizing] .chat-gutter {
   line-height: 1.45;
 }
 
-/* Playbook admin step cards (reuses templates-page shell). */
-.playbook-step-card {
+/* —— Playbook (Paths) admin —— */
+.playbooks-page .templates-detail-panel__actions,
+.playbooks-detail__actions {
+  flex-wrap: nowrap;
+}
+
+.playbooks-toolbar-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.playbooks-toolbar-btn span {
+  white-space: nowrap;
+}
+
+.playbooks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-panel);
-  margin-bottom: var(--space-3);
-}
-
-.playbook-step-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.playbook-step-card__actions {
-  display: flex;
   gap: 4px;
 }
 
-.playbook-step-card .templates-field select {
+.playbooks-list__row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-primary);
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.playbooks-list__row:hover {
+  background: var(--surface-selected);
+}
+
+.playbooks-list__row[data-active="true"] {
+  background: var(--surface-selected);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.playbooks-list__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.playbooks-list__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.playbooks-list__count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.playbooks-list__desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playbooks-detail {
+  /* override shared templates column: playbooks need a bit more width for stepper */
+  --templates-detail-max: 760px;
+}
+
+.playbooks-detail__toolbar {
+  width: 100%;
+  max-width: var(--templates-detail-max);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.playbooks-detail__identity {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.playbooks-detail__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.playbooks-detail__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.playbooks-detail__id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.playbooks-detail__id code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.playbooks-detail__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.playbooks-detail__body {
+  width: 100%;
+  max-width: var(--templates-detail-max);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.playbooks-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 900px) {
+  .playbooks-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+.playbooks-meta__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.playbooks-meta__label {
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.playbooks-meta__field input {
   width: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  background: var(--surface-canvas);
+  background: var(--surface-panel);
   color: var(--text-primary);
   font: inherit;
   padding: 10px 12px;
+  outline: none;
+}
+
+.playbooks-meta__field input:focus {
+  border-color: var(--action-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 18%, transparent);
+}
+
+.playbooks-steps__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.playbooks-steps__head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.playbooks-steps__head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  max-width: 42ch;
+}
+
+/* Vertical stepper for step editors */
+.playbooks-stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.playbooks-stepper__item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0 12px;
+  align-items: stretch;
+}
+
+.playbooks-stepper__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.playbooks-stepper__node {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  color: var(--action-primary);
+  background: color-mix(in srgb, var(--action-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action-primary) 28%, transparent);
+}
+
+.playbooks-stepper__line {
+  flex: 1 1 auto;
+  width: 2px;
+  min-height: 16px;
+  margin: 4px 0;
+  background: var(--border-subtle);
+  border-radius: 1px;
+}
+
+.playbooks-stepper__card {
+  min-width: 0;
+  margin-bottom: var(--space-3);
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.playbooks-stepper__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.playbooks-stepper__card-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playbooks-stepper__card-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.playbooks-stepper__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.playbooks-stepper__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.playbooks-stepper__field--full {
+  grid-column: 1 / -1;
+}
+
+.playbooks-stepper__field input,
+.playbooks-stepper__field select,
+.playbooks-stepper__field textarea {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--weight-regular);
+  padding: 8px 10px;
+  outline: none;
+}
+
+.playbooks-stepper__field textarea {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.45;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+
+.playbooks-stepper__mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace) !important;
+  font-size: 12px !important;
+}
+
+.playbooks-stepper__field input:focus,
+.playbooks-stepper__field select:focus,
+.playbooks-stepper__field textarea:focus {
+  border-color: var(--action-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 16%, transparent);
 }
 
 /* Provenance only — path structure is edited on Playbook Template admin. */
@@ -4871,12 +5183,17 @@ body[data-panel-resizing] .chat-gutter {
 
 .templates-detail-panel__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   margin-left: auto;
+}
+
+.templates-detail-panel__actions .button {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .templates-form {

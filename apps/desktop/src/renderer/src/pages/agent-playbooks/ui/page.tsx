@@ -134,6 +134,7 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
 
   const draft = () => model.draft();
   const selected = () => model.selected();
+  const stepCount = () => draft()?.steps.length ?? 0;
 
   return (
     <div class="templates-page playbooks-page">
@@ -141,15 +142,16 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
         <header class="templates-list-panel__head">
           <div>
             <h1>路径模板</h1>
-            <p>配置 playbook 步骤与 Agent Template 绑定</p>
+            <p>Playbook：步骤顺序与 Agent Template</p>
           </div>
           <Button
             variant="primary"
+            class="playbooks-toolbar-btn"
             disabled={model.busyAction() || model.loading()}
             onClick={() => void handleCreate()}
           >
             <Plus size={14} />
-            新建
+            <span>新建</span>
           </Button>
         </header>
 
@@ -161,233 +163,277 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
             </p>
           }
         >
-          <For each={model.playbooks()}>
-            {(item) => (
-              <button
-                type="button"
-                class="templates-row"
-                data-active={model.selectedId() === item.id ? "true" : undefined}
-                onClick={() => requestSelect(item.id)}
-              >
-                <span class="templates-row__name">{item.name}</span>
-                <Show when={item.description.trim()}>
-                  <span class="templates-row__desc">{item.description}</span>
-                </Show>
-                <span
-                  class="templates-badge"
-                  classList={{ "templates-badge--user": item.source === "user" }}
-                >
-                  {item.source === "system" ? "系统" : "用户"} · {item.steps.length} 步
-                </span>
-              </button>
-            )}
-          </For>
+          <ul class="playbooks-list">
+            <For each={model.playbooks()}>
+              {(item) => (
+                <li>
+                  <button
+                    type="button"
+                    class="playbooks-list__row"
+                    data-active={model.selectedId() === item.id ? "true" : undefined}
+                    onClick={() => requestSelect(item.id)}
+                  >
+                    <span class="playbooks-list__title">{item.name}</span>
+                    <span class="playbooks-list__meta">
+                      <span
+                        class="templates-badge"
+                        classList={{ "templates-badge--user": item.source === "user" }}
+                      >
+                        {item.source === "system" ? "系统" : "用户"}
+                      </span>
+                      <span class="playbooks-list__count">{item.steps.length} 步</span>
+                    </span>
+                    <Show when={item.description.trim()}>
+                      <span class="playbooks-list__desc">{item.description}</span>
+                    </Show>
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
           <Show when={model.playbooks().length === 0}>
             <p class="templates-muted">暂无路径模板</p>
           </Show>
         </Show>
       </aside>
 
-      <section class="templates-detail-panel">
+      <section class="templates-detail-panel playbooks-detail">
         <Show
           when={selected() && draft()}
           fallback={<p class="templates-muted templates-detail-empty">选择左侧路径以编辑</p>}
         >
-          <header class="templates-detail-panel__head">
-            <div class="templates-detail-panel__title">
-              <h2>{draft()!.name || "未命名路径"}</h2>
-              <span
-                class="templates-badge"
-                classList={{ "templates-badge--user": selected()!.source === "user" }}
-              >
-                {selected()!.source === "system" ? "系统" : "用户"}
-              </span>
-              <Show when={model.dirty()}>
-                <span class="templates-badge templates-badge--dirty">未保存</span>
-              </Show>
+          {/* Identity + toolbar */}
+          <header class="playbooks-detail__toolbar">
+            <div class="playbooks-detail__identity">
+              <div class="playbooks-detail__title-row">
+                <h2 class="playbooks-detail__title">{draft()!.name || "未命名路径"}</h2>
+                <span
+                  class="templates-badge"
+                  classList={{ "templates-badge--user": selected()!.source === "user" }}
+                >
+                  {selected()!.source === "system" ? "系统" : "用户"}
+                </span>
+                <Show when={model.dirty()}>
+                  <span class="templates-badge templates-badge--dirty">未保存</span>
+                </Show>
+              </div>
+              <p class="playbooks-detail__id">
+                <code>{selected()!.id}</code>
+                <span aria-hidden="true">·</span>
+                <span>{stepCount()} 个步骤</span>
+              </p>
             </div>
-            <div class="templates-detail-panel__actions">
-              <Button
-                variant="secondary"
+            <div class="playbooks-detail__actions">
+              <IconButton
+                label="复制路径"
+                size="sm"
                 disabled={model.busyAction()}
                 onClick={() => void handleDuplicate()}
               >
-                <Copy size={14} />
-                复制
-              </Button>
+                <Copy size={15} />
+              </IconButton>
               <Show when={selected()!.source === "system"}>
-                <Button
-                  variant="secondary"
+                <IconButton
+                  label="恢复出厂"
+                  size="sm"
                   disabled={model.busyAction()}
                   onClick={requestReset}
                 >
-                  <RotateCcw size={14} />
-                  恢复出厂
-                </Button>
+                  <RotateCcw size={15} />
+                </IconButton>
               </Show>
               <Show when={selected()!.source === "user"}>
-                <Button
-                  variant="secondary"
+                <IconButton
+                  label="删除路径"
+                  size="sm"
                   disabled={model.busyAction()}
                   onClick={requestDelete}
                 >
-                  <Trash2 size={14} />
-                  删除
-                </Button>
+                  <Trash2 size={15} />
+                </IconButton>
               </Show>
               <Show when={model.dirty()}>
-                <Button variant="secondary" disabled={model.saving()} onClick={() => model.discardDraft()}>
+                <Button
+                  variant="secondary"
+                  class="playbooks-toolbar-btn"
+                  disabled={model.saving()}
+                  onClick={() => model.discardDraft()}
+                >
                   放弃
                 </Button>
               </Show>
               <Button
                 variant="primary"
+                class="playbooks-toolbar-btn"
                 disabled={!model.dirty() || model.saving()}
                 onClick={() => void handleSave()}
               >
                 <Save size={14} />
-                {model.saving() ? "保存中…" : "保存"}
+                <span>{model.saving() ? "保存中…" : "保存"}</span>
               </Button>
             </div>
           </header>
 
-          <div class="templates-form">
-            <label class="templates-field">
-              <span>名称</span>
-              <input
-                type="text"
-                value={draft()!.name}
-                onInput={(event) => model.patchDraft({ name: event.currentTarget.value })}
-              />
-            </label>
-            <label class="templates-field">
-              <span>描述</span>
-              <input
-                type="text"
-                placeholder="新建 Task 时展示"
-                value={draft()!.description}
-                onInput={(event) => model.patchDraft({ description: event.currentTarget.value })}
-              />
-            </label>
+          <div class="playbooks-detail__body">
+            <section class="playbooks-meta" aria-label="路径信息">
+              <label class="playbooks-meta__field">
+                <span class="playbooks-meta__label">名称</span>
+                <input
+                  type="text"
+                  value={draft()!.name}
+                  onInput={(event) => model.patchDraft({ name: event.currentTarget.value })}
+                />
+              </label>
+              <label class="playbooks-meta__field playbooks-meta__field--wide">
+                <span class="playbooks-meta__label">描述</span>
+                <input
+                  type="text"
+                  placeholder="新建 Task 时展示给用户"
+                  value={draft()!.description}
+                  onInput={(event) => model.patchDraft({ description: event.currentTarget.value })}
+                />
+              </label>
+            </section>
 
-            <div class="templates-field templates-field--block">
-              <span>步骤</span>
-              <p class="templates-hint">
-                每步绑定一个 Agent Template（Role Prompt + 建议 skill 策略）。Starter 为建议首条消息，不是强制挂载 skill。
-              </p>
-              <For each={draft()!.steps}>
-                {(step, index) => (
-                  <div class="playbook-step-card">
-                    <header class="playbook-step-card__head">
-                      <strong>
-                        {index() + 1}. {step.label || step.id}
-                      </strong>
-                      <div class="playbook-step-card__actions">
-                        <IconButton
-                          label="上移"
-                          size="sm"
-                          disabled={index() === 0}
-                          onClick={() => model.moveStep(index(), -1)}
-                        >
-                          <ChevronUp size={14} />
-                        </IconButton>
-                        <IconButton
-                          label="下移"
-                          size="sm"
-                          disabled={index() >= draft()!.steps.length - 1}
-                          onClick={() => model.moveStep(index(), 1)}
-                        >
-                          <ChevronDown size={14} />
-                        </IconButton>
-                        <IconButton
-                          label="删除步骤"
-                          size="sm"
-                          disabled={draft()!.steps.length <= 1}
-                          onClick={() => model.removeStep(index())}
-                        >
-                          <Trash2 size={14} />
-                        </IconButton>
-                      </div>
-                    </header>
-                    <label class="templates-field">
-                      <span>步骤 id</span>
-                      <input
-                        type="text"
-                        value={step.id}
-                        onInput={(event) =>
-                          model.patchStep(index(), { id: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label class="templates-field">
-                      <span>显示名</span>
-                      <input
-                        type="text"
-                        value={step.label}
-                        onInput={(event) =>
-                          model.patchStep(index(), { label: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label class="templates-field">
-                      <span>说明</span>
-                      <input
-                        type="text"
-                        value={step.blurb}
-                        onInput={(event) =>
-                          model.patchStep(index(), { blurb: event.currentTarget.value })
-                        }
-                      />
-                    </label>
-                    <label class="templates-field">
-                      <span>Agent Template</span>
-                      <select
-                        value={step.agentTemplateId}
-                        onChange={(event) =>
-                          model.patchStep(index(), {
-                            agentTemplateId: event.currentTarget.value,
-                          })
-                        }
-                      >
-                        <option value="">选择模板…</option>
-                        <For each={agentTemplates()}>
-                          {(tpl) => (
-                            <option value={tpl.id}>
-                              {tpl.source === "system" ? "系统" : "用户"} · {tpl.name}
-                            </option>
-                          )}
-                        </For>
-                        <Show
-                          when={
-                            step.agentTemplateId &&
-                            !agentTemplates().some((t) => t.id === step.agentTemplateId)
-                          }
-                        >
-                          <option value={step.agentTemplateId}>{step.agentTemplateId}</option>
+            <section class="playbooks-steps" aria-label="步骤配置">
+              <header class="playbooks-steps__head">
+                <div>
+                  <h3>步骤</h3>
+                  <p>每步绑定 Agent Template；Starter 为建议首条（如 /skill），非强制挂载。</p>
+                </div>
+                <Button
+                  variant="secondary"
+                  class="playbooks-toolbar-btn"
+                  onClick={() => model.addStep()}
+                >
+                  <Plus size={14} />
+                  <span>添加步骤</span>
+                </Button>
+              </header>
+
+              <ol class="playbooks-stepper">
+                <For each={draft()!.steps}>
+                  {(step, index) => (
+                    <li class="playbooks-stepper__item">
+                      <div class="playbooks-stepper__rail" aria-hidden="true">
+                        <span class="playbooks-stepper__node">{index() + 1}</span>
+                        <Show when={index() < stepCount() - 1}>
+                          <span class="playbooks-stepper__line" />
                         </Show>
-                      </select>
-                    </label>
-                    <label class="templates-field templates-field--block">
-                      <span>Starter（建议首条）</span>
-                      <textarea
-                        rows={3}
-                        value={step.starterPrompt}
-                        placeholder="/skill-name&#10;&#10;任务说明…"
-                        onInput={(event) =>
-                          model.patchStep(index(), {
-                            starterPrompt: event.currentTarget.value,
-                          })
-                        }
-                      />
-                    </label>
-                  </div>
-                )}
-              </For>
-              <Button variant="secondary" onClick={() => model.addStep()}>
-                <Plus size={14} />
-                添加步骤
-              </Button>
-            </div>
+                      </div>
+                      <div class="playbooks-stepper__card">
+                        <header class="playbooks-stepper__card-head">
+                          <span class="playbooks-stepper__card-title">
+                            {step.label.trim() || step.id || `步骤 ${index() + 1}`}
+                          </span>
+                          <div class="playbooks-stepper__card-tools">
+                            <IconButton
+                              label="上移"
+                              size="sm"
+                              disabled={index() === 0}
+                              onClick={() => model.moveStep(index(), -1)}
+                            >
+                              <ChevronUp size={14} />
+                            </IconButton>
+                            <IconButton
+                              label="下移"
+                              size="sm"
+                              disabled={index() >= stepCount() - 1}
+                              onClick={() => model.moveStep(index(), 1)}
+                            >
+                              <ChevronDown size={14} />
+                            </IconButton>
+                            <IconButton
+                              label="删除步骤"
+                              size="sm"
+                              disabled={stepCount() <= 1}
+                              onClick={() => model.removeStep(index())}
+                            >
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </div>
+                        </header>
+                        <div class="playbooks-stepper__grid">
+                          <label class="playbooks-stepper__field">
+                            <span>显示名</span>
+                            <input
+                              type="text"
+                              value={step.label}
+                              onInput={(event) =>
+                                model.patchStep(index(), { label: event.currentTarget.value })
+                              }
+                            />
+                          </label>
+                          <label class="playbooks-stepper__field">
+                            <span>步骤 id</span>
+                            <input
+                              type="text"
+                              class="playbooks-stepper__mono"
+                              value={step.id}
+                              onInput={(event) =>
+                                model.patchStep(index(), { id: event.currentTarget.value })
+                              }
+                            />
+                          </label>
+                          <label class="playbooks-stepper__field playbooks-stepper__field--full">
+                            <span>说明</span>
+                            <input
+                              type="text"
+                              placeholder="短说明（可选）"
+                              value={step.blurb}
+                              onInput={(event) =>
+                                model.patchStep(index(), { blurb: event.currentTarget.value })
+                              }
+                            />
+                          </label>
+                          <label class="playbooks-stepper__field playbooks-stepper__field--full">
+                            <span>Agent Template</span>
+                            <select
+                              value={step.agentTemplateId}
+                              onChange={(event) =>
+                                model.patchStep(index(), {
+                                  agentTemplateId: event.currentTarget.value,
+                                })
+                              }
+                            >
+                              <option value="">选择模板…</option>
+                              <For each={agentTemplates()}>
+                                {(tpl) => (
+                                  <option value={tpl.id}>
+                                    {tpl.source === "system" ? "系统" : "用户"} · {tpl.name}
+                                  </option>
+                                )}
+                              </For>
+                              <Show
+                                when={
+                                  step.agentTemplateId &&
+                                  !agentTemplates().some((t) => t.id === step.agentTemplateId)
+                                }
+                              >
+                                <option value={step.agentTemplateId}>{step.agentTemplateId}</option>
+                              </Show>
+                            </select>
+                          </label>
+                          <label class="playbooks-stepper__field playbooks-stepper__field--full">
+                            <span>Starter（建议首条）</span>
+                            <textarea
+                              rows={2}
+                              value={step.starterPrompt}
+                              placeholder={"/skill-name\n\n任务说明…"}
+                              onInput={(event) =>
+                                model.patchStep(index(), {
+                                  starterPrompt: event.currentTarget.value,
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </li>
+                  )}
+                </For>
+              </ol>
+            </section>
           </div>
         </Show>
       </section>

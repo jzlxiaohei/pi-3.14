@@ -147,7 +147,7 @@ test("reset factory restores system seed fields", async () => {
   if (!result.ok) return;
   assert.equal(result.template.name, "to-spec");
   assert.equal(result.template.description, "");
-  assert.equal(result.template.systemPrompt.includes("spec writer"), true);
+  assert.equal(result.template.systemPrompt.includes("specification step"), true);
   assert.deepEqual(result.template.skillPolicy.ignoredSkillNames, []);
 
   const user = await store.createTemplate({ name: "u" });

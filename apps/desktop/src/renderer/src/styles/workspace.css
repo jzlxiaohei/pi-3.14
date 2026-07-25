@@ -4684,21 +4684,30 @@ body[data-panel-resizing] .chat-gutter {
 }
 
 .templates-detail-panel {
+  --templates-detail-max: 720px;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   overflow: auto;
   padding: var(--space-5) var(--space-6);
   background: var(--surface-canvas);
 }
 
+/* Title, actions, and form share one centered column so toolbar stays near the editor. */
+.templates-detail-panel__head,
+.templates-form {
+  width: 100%;
+  max-width: var(--templates-detail-max);
+}
+
 .templates-detail-panel__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-5);
 }
 
@@ -4707,6 +4716,8 @@ body[data-panel-resizing] .chat-gutter {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .templates-detail-panel__title h2 {
@@ -4714,19 +4725,26 @@ body[data-panel-resizing] .chat-gutter {
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .templates-detail-panel__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
+  flex: 0 1 auto;
+  margin-left: auto;
 }
 
 .templates-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 880px;
 }
 
 .templates-field {

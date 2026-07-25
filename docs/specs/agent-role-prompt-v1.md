@@ -303,35 +303,24 @@ Extend existing context preview; do not add a second editor surface.
 
 ### System template seeds
 
-Rewrite `SYSTEM_TEMPLATE_SEEDS[*].systemPrompt` bodies to **minimal full role bases**:
+`SYSTEM_TEMPLATE_SEEDS[*].systemPrompt` uses **thin playbook boundaries** (not full skill bodies):
 
-Each seed MUST include:
+- **Thin non-empty Role** — step identity + in/out of scope only (e.g. grill / to-spec / diagnose / review). Methodology lives in Matt skills triggered by playbook starters (`/grill-with-docs`, `/to-spec`, …).
+- **Empty Role** — full PI default coding base at bind. Used for coding-heavy steps (`implement`, `tdd`) where the step method is the skill, not a custom base.
+- MUST NOT embed questionnaire protocol, paraphrase entire skill markdown, or assume PI’s default opener is present when Role is non-empty (non-empty **replaces** PI base).
 
-- **Identity** — who the Agent is in this step (not “you are also a coding assistant, plus…”)
-- **Goals** — what done looks like for the step
-- **Non-goals** — what to refuse or defer
-- **Style** — brevity, questions vs patches, use of skills/docs as relevant
+Boot seed is **insert-only** (ADR-0005): missing system ids are inserted; existing rows are not overwritten. Use **Reset factory** (or a fresh catalog) to pick up seed text changes. **Already-created Agents keep their snapshotted text** until restore-from-template or user edit.
 
-Each seed MUST NOT:
-
-- Assume PI’s default opener is present
-- Embed questionnaire protocol text
-- Depend on workflow JSON `rolePrompt` (removed in split v1)
-
-Boot `seedSystemTemplates` upsert continues to refresh system template rows from seeds (existing behavior). **Already-created Agents keep their snapshotted text** until restore-default or user edit — do not bulk-rewrite instance rows on boot.
-
-Suggested tone anchors (implementer expands to full short bases, not one-liners):
-
-| Template id | Identity anchor |
+| Template id | Role strategy |
 |---|---|
-| `tpl:feature-default/grilling` | Requirements discovery interviewer / grill facilitator |
-| `tpl:feature-default/to-spec` | Spec writer turning decisions into executable spec |
-| `tpl:feature-default/implement` | Implementer executing an agreed spec |
-| `tpl:small-tdd/tdd` | TDD pair working red→green→refactor |
-| `tpl:small-tdd/code-review` | Reviewer of recent diff |
-| `tpl:bugfix/diagnosing-bugs` | Debugger diagnosing failures |
-| `tpl:bugfix/tdd` | TDD fixer for a diagnosed bug |
-| `tpl:bugfix/code-review` | Reviewer of the fix |
+| `tpl:feature-default/grilling` | Thin: discovery step boundary |
+| `tpl:feature-default/to-spec` | Thin: specification step boundary |
+| `tpl:feature-default/implement` | Empty → PI default; `/implement` skill |
+| `tpl:small-tdd/tdd` | Empty → PI default; `/tdd` skill |
+| `tpl:small-tdd/code-review` | Thin: review findings boundary |
+| `tpl:bugfix/diagnosing-bugs` | Thin: diagnosis step boundary |
+| `tpl:bugfix/tdd` | Empty → PI default; `/tdd` skill |
+| `tpl:bugfix/code-review` | Thin: fix-review residual risk boundary |
 
 ### IPC surface (delta)
 

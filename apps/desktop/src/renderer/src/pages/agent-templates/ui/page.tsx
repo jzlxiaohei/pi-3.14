@@ -23,6 +23,10 @@ type TemplatesPageProps = {
 
 export function TemplatesPage(props: TemplatesPageProps) {
   const model = props.model ?? createTemplatesModel();
+  /**
+   * discard.nextId is either a template id, null, or a deferred action token:
+   * __create__ | __duplicate__ | __delete__ | __reset__
+   */
   const [confirm, setConfirm] = createSignal<
     null | { kind: "discard"; nextId: string | null } | { kind: "delete" } | { kind: "reset" }
   >(null);
@@ -87,6 +91,24 @@ export function TemplatesPage(props: TemplatesPageProps) {
     }
   }
 
+  /** Spec: dirty on current row → discard dialog first, then delete confirm. */
+  function requestDelete(): void {
+    if (model.dirty()) {
+      setConfirm({ kind: "discard", nextId: "__delete__" });
+      return;
+    }
+    setConfirm({ kind: "delete" });
+  }
+
+  /** Spec: dirty on current row → discard dialog first, then reset confirm. */
+  function requestReset(): void {
+    if (model.dirty()) {
+      setConfirm({ kind: "discard", nextId: "__reset__" });
+      return;
+    }
+    setConfirm({ kind: "reset" });
+  }
+
   async function resolveDiscard(): Promise<void> {
     const state = confirm();
     if (!state || state.kind !== "discard") return;
@@ -109,6 +131,15 @@ export function TemplatesPage(props: TemplatesPageProps) {
       } catch (err) {
         notifyError("复制失败", err instanceof Error ? err.message : String(err));
       }
+      return;
+    }
+    if (next === "__delete__") {
+      // Unsaved edits discarded; still require explicit delete confirmation.
+      setConfirm({ kind: "delete" });
+      return;
+    }
+    if (next === "__reset__") {
+      setConfirm({ kind: "reset" });
       return;
     }
     model.selectTemplate(next, { force: true });
@@ -142,6 +173,22 @@ export function TemplatesPage(props: TemplatesPageProps) {
       model.setIgnoredSkillNames([...current, name]);
     }
     setSkillInput("");
+  }
+
+  function discardConfirmMessage(): string {
+    const state = confirm();
+    const next = state?.kind === "discard" ? state.nextId : null;
+    const tail =
+      next === "__delete__"
+        ? "，然后确认删除模板"
+        : next === "__reset__"
+          ? "，然后确认恢复出厂"
+          : next === "__duplicate__"
+            ? "，然后复制模板"
+            : next === "__create__"
+              ? "，然后新建模板"
+              : "";
+    return `当前模板有未保存的修改。继续将丢弃这些更改${tail}。`;
   }
 
   const draft = () => model.draft();
@@ -232,7 +279,7 @@ export function TemplatesPage(props: TemplatesPageProps) {
                 <Button
                   variant="secondary"
                   disabled={model.busyAction()}
-                  onClick={() => setConfirm({ kind: "reset" })}
+                  onClick={requestReset}
                 >
                   <RotateCcw size={14} />
                   恢复出厂
@@ -242,7 +289,7 @@ export function TemplatesPage(props: TemplatesPageProps) {
                 <Button
                   variant="secondary"
                   disabled={model.busyAction()}
-                  onClick={() => setConfirm({ kind: "delete" })}
+                  onClick={requestDelete}
                 >
                   <Trash2 size={14} />
                   删除
@@ -370,7 +417,7 @@ export function TemplatesPage(props: TemplatesPageProps) {
             </IconButton>
           </header>
           <div class="confirm-dialog__body">
-            <p>当前模板有未保存的修改。继续将丢弃这些更改。</p>
+            <p>{discardConfirmMessage()}</p>
           </div>
           <footer class="confirm-dialog__footer">
             <Button variant="secondary" onClick={() => setConfirm(null)}>

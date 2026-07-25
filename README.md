@@ -18,27 +18,27 @@ PI owns the agent runtime: models, tools, sessions, skills, and provider auth. P
 ### Workspace + chat timeline
 Task sidebar, questionnaire / agent turns, and the session rail (model, context, git) — the main loop on one screen.
 
-[![PIE workspace and chat timeline](docs/screenshots/chat-timeline.png)](docs/screenshots/chat-timeline.png)
+<p align="center">
+  <a href="docs/screenshots/chat-timeline.png"><img src="docs/screenshots/chat-timeline.png" alt="PIE workspace and chat timeline" width="720" /></a>
+</p>
 
-### Branch graph
-Session leaves as a readable tree: forks from edit / resume, tool counts, and switch-back without losing history.
+### Agent & path templates
+Reusable **Agent Templates** (role prompt + skill ignore) and **Path Templates** (ordered steps with starter prompts and optional template binding).
 
-[![Branch graph](docs/screenshots/graph-branch.png)](docs/screenshots/graph-branch.png)
+<p align="center">
+  <a href="docs/screenshots/agent-template.png"><img src="docs/screenshots/agent-template.png" alt="Agent templates" width="360" /></a>
+  &nbsp;
+  <a href="docs/screenshots/path-template.png"><img src="docs/screenshots/path-template.png" alt="Path templates" width="360" /></a>
+</p>
 
-### Context inspector
-What actually went to the model — window fill, token totals, session shape, and estimated composition (system / user / tool).
+### Branch graph & context
+Session leaves as a readable tree, plus what actually went to the model (window fill, tokens, composition).
 
-[![Context inspector](docs/screenshots/context.jpg)](docs/screenshots/context.jpg)
-
-### Agent templates
-Reusable **Agent Template** catalog — role prompt, skill ignore list, and system vs custom entries — so each step or task can start with a known persona.
-
-[![Agent templates](docs/screenshots/agent-template.png)](docs/screenshots/agent-template.png)
-
-### Path templates
-**Playbook paths**: ordered steps with optional Agent Template binding and starter prompts (e.g. diagnosing-bugs → tdd → code-review).
-
-[![Path templates](docs/screenshots/path-template.png)](docs/screenshots/path-template.png)
+<p align="center">
+  <a href="docs/screenshots/graph-branch.png"><img src="docs/screenshots/graph-branch.png" alt="Branch graph" width="360" /></a>
+  &nbsp;
+  <a href="docs/screenshots/context.jpg"><img src="docs/screenshots/context.jpg" alt="Context inspector" width="220" /></a>
+</p>
 
 ---
 

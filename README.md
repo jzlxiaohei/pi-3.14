@@ -30,6 +30,16 @@ What actually went to the model — window fill, token totals, session shape, an
 
 [![Context inspector](docs/screenshots/context.jpg)](docs/screenshots/context.jpg)
 
+### Agent templates
+Reusable **Agent Template** catalog — role prompt, skill ignore list, and system vs custom entries — so each step or task can start with a known persona.
+
+[![Agent templates](docs/screenshots/agent-template.png)](docs/screenshots/agent-template.png)
+
+### Path templates
+**Playbook paths**: ordered steps with optional Agent Template binding and starter prompts (e.g. diagnosing-bugs → tdd → code-review).
+
+[![Path templates](docs/screenshots/path-template.png)](docs/screenshots/path-template.png)
+
 ---
 
 ## Keywords
@@ -59,9 +69,11 @@ What you can use **today** in the desktop app:
 - **Branch tree** view for long-running work
 - **Questionnaire** turns when the agent needs structured answers
 
-### Skills & paths (early)
+### Skills, templates & paths
+- **Agent Templates** admin — role prompt + skill ignore; bind at task or path step
+- **Path Templates** admin — multi-step playbooks (order, starter, optional template per step)
+- Optional **engineering path** at task create (step card + starters)
 - **Extract Skill** from a run (draft `SKILL.md`, you confirm write) — first slice
-- Optional **engineering path** playbooks at task create (step card + starters)
 - Personal skills via PI (`~/.pi/agent/skills`)
 
 ### Platform
@@ -78,7 +90,7 @@ Not done yet — don’t treat these as shipping product features:
 
 | Area | Status | Notes |
 |------|--------|--------|
-| **Subagents** in the desktop product | **In progress** | Workflow steps spawn Child Task sessions + per-step `rolePrompt` (see [ADR 0002](docs/adr/0002-workflow-step-subagents.md)); generic model-driven subagent tool still later |
+| **Subagents** in the desktop product | **In progress** | Workflow steps = Child Task sessions + `rolePrompt` ([ADR 0002](docs/adr/0002-workflow-step-subagents.md)); **Done** runs a forced Step Handoff turn before next step ([ADR 0003](docs/adr/0003-workflow-step-handoff.md)); generic subagent tool still later |
 | Skills management UI | **TODO** | Extract is a first slice; browse / attach / organize skills is later |
 | Richer workflow engine | **TODO** | Playbooks are lightweight; full automation paths TBD |
 | Polished packaging / onboarding | **TODO** | Early product; install & auth UX still evolving |

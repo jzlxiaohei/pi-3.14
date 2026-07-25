@@ -1,10 +1,6 @@
 import { Check, ChevronDown, ChevronUp, LayoutTemplate, Route, SkipForward } from "lucide-solid";
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import type {
-  AgentTemplate,
-  TaskWorkflow,
-  TaskWorkflowStep,
-} from "../../../../../shared/desktop-contracts";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import type { AgentTemplate, TaskWorkflow } from "../../../../../shared/desktop-contracts";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { advanceWorkflow, workflowView } from "../workflow/playbooks";
@@ -24,24 +20,14 @@ type WorkflowStepsProps = {
    * (e.g. spawn next step subagent session).
    */
   onStepAdvance?: (mode: "done" | "skipped") => void;
-  /** Open Templates library focused on a template id (discover binding). */
+  /** Open Templates library focused on a template id. */
   onOpenTemplate?: (templateId: string) => void;
 };
 
-type BindingRow = {
-  stepId: string;
-  label: string;
-  index: number;
-  status: TaskWorkflowStep["status"];
-  templateId: string;
-  agentId?: string;
-  isCurrent: boolean;
-};
-
 /**
- * Playbook step card. Parent keeps it mounted while `workflow` is set.
- * Collapse only hides chrome; mid-path there is no “remove path” control —
- * only a completed playbook can clear via 清除路径.
+ * Playbook progress card: current step + template provenance.
+ * Path structure / step→template mapping is edited on a Playbook definition surface
+ * (not here). Role Prompt is edited on the Agent, not re-bound from this card.
  */
 export function WorkflowSteps(props: WorkflowStepsProps) {
   const [expanded, setExpanded] = createSignal(true);
@@ -49,24 +35,11 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
   const [stepPulse, setStepPulse] = createSignal(false);
   const [templates, setTemplates] = createSignal<AgentTemplate[]>([]);
   const view = createMemo(() => workflowView(props.workflow));
-
-  /** Full path bindings — not only the active step (active is always agent-bound after create). */
-  const bindingRows = createMemo((): BindingRow[] => {
-    const playbook = view().playbook;
-    const byId = new Map(props.workflow.steps.map((s) => [s.id, s]));
-    return playbook.steps.map((def, index) => {
-      const bound = byId.get(def.id);
-      const templateId = bound?.templateId?.trim() || def.templateId;
-      return {
-        stepId: def.id,
-        label: def.label,
-        index,
-        status: bound?.status ?? (index === 0 ? "active" : "pending"),
-        templateId,
-        ...(bound?.agentId ? { agentId: bound.agentId } : {}),
-        isCurrent: def.id === props.workflow.stepId,
-      };
-    });
+  const templateId = createMemo(() => view().stepTemplateId);
+  const templateName = createMemo(() => {
+    const id = templateId();
+    if (!id) return null;
+    return templates().find((t) => t.id === id)?.name ?? id;
   });
 
   onMount(() => {
@@ -141,39 +114,6 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
     dismiss(null, null);
   }
 
-  function templateName(id: string): string {
-    return templates().find((t) => t.id === id)?.name ?? id;
-  }
-
-  /**
-   * Per-task rebind for any step that has no Agent yet.
-   * Ensures the step row exists on workflow.steps (legacy shells).
-   */
-  function rebindStepTemplate(stepId: string, nextTemplateId: string): void {
-    if (props.disabled || phase() === "leave") return;
-    const id = nextTemplateId.trim();
-    if (!id) return;
-    const existing = props.workflow.steps.find((s) => s.id === stepId);
-    if (existing?.agentId) return;
-
-    const def = view().playbook.steps.find((s) => s.id === stepId);
-    let steps = props.workflow.steps.map((step) =>
-      step.id === stepId ? { ...step, templateId: id } : step,
-    );
-    if (!steps.some((s) => s.id === stepId)) {
-      steps = [
-        ...steps,
-        {
-          id: stepId,
-          status: "pending",
-          templateId: id,
-          ...(def?.starterPrompt ? { starterPrompt: def.starterPrompt } : {}),
-        },
-      ];
-    }
-    props.onWorkflowChange({ ...props.workflow, steps }, null);
-  }
-
   return (
     <div
       class="workflow-steps"
@@ -225,80 +165,23 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
           <div class="workflow-steps__body">
             <p class="workflow-steps__step">{view().stepDef.label}</p>
             <p class="workflow-steps__blurb">{view().stepDef.blurb}</p>
-
-            <div class="workflow-steps__bindings">
-              <div class="workflow-steps__bindings-head">
-                <LayoutTemplate size={13} />
-                <span>步骤 → Agent Template</span>
-              </div>
-              <ul class="workflow-steps__bindings-list">
-                <For each={bindingRows()}>
-                  {(row) => {
-                    const locked = () => Boolean(row.agentId);
-                    return (
-                      <li
-                        class="workflow-steps__binding"
-                        data-current={row.isCurrent ? "true" : undefined}
-                        data-locked={locked() ? "true" : undefined}
-                      >
-                        <div class="workflow-steps__binding-step">
-                          <span class="workflow-steps__binding-index">{row.index + 1}</span>
-                          <span class="workflow-steps__binding-label">{row.label}</span>
-                          <Show when={row.isCurrent}>
-                            <span class="workflow-steps__binding-badge">当前</span>
-                          </Show>
-                          <Show when={locked()}>
-                            <span class="workflow-steps__binding-badge workflow-steps__binding-badge--lock">
-                              已建 Agent
-                            </span>
-                          </Show>
-                        </div>
-                        <Show
-                          when={!locked()}
-                          fallback={
-                            <button
-                              type="button"
-                              class="workflow-steps__template-link"
-                              disabled={!props.onOpenTemplate}
-                              onClick={() => props.onOpenTemplate?.(row.templateId)}
-                              title={row.templateId}
-                            >
-                              {templateName(row.templateId)}
-                              <span class="workflow-steps__template-id">{row.templateId}</span>
-                            </button>
-                          }
-                        >
-                          <select
-                            class="workflow-steps__template-select"
-                            value={row.templateId}
-                            disabled={props.disabled || phase() === "leave"}
-                            onChange={(event) =>
-                              rebindStepTemplate(row.stepId, event.currentTarget.value)
-                            }
-                            title="本步尚未创建 Agent，可改绑定；推进到该步时生效"
-                          >
-                            <For each={templates()}>
-                              {(t) => (
-                                <option value={t.id}>
-                                  {t.source === "system" ? "系统" : "用户"} · {t.name}
-                                </option>
-                              )}
-                            </For>
-                            <Show when={!templates().some((t) => t.id === row.templateId)}>
-                              <option value={row.templateId}>{row.templateId}</option>
-                            </Show>
-                          </select>
-                        </Show>
-                      </li>
-                    );
-                  }}
-                </For>
-              </ul>
-              <p class="workflow-steps__bindings-hint">
-                未创建 Agent 的步骤可改模板；已创建的步骤绑定锁定（快照隔离）。
-              </p>
-            </div>
-
+            <Show when={templateId()}>
+              {(id) => (
+                <p class="workflow-steps__provenance">
+                  <LayoutTemplate size={12} />
+                  <span>来自模板</span>
+                  <button
+                    type="button"
+                    class="workflow-steps__provenance-link"
+                    disabled={!props.onOpenTemplate}
+                    onClick={() => props.onOpenTemplate?.(id())}
+                    title={id()}
+                  >
+                    {templateName() ?? id()}
+                  </button>
+                </p>
+              )}
+            </Show>
             <Show when={props.advancing}>
               <p class="workflow-steps__advancing" aria-live="polite">
                 正在生成步骤交接摘要…

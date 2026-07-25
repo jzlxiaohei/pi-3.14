@@ -200,15 +200,16 @@ export function TemplatesPage(props: TemplatesPageProps) {
         <header class="templates-list-panel__head">
           <div>
             <h1>模板库</h1>
-            <p>管理系统与用户 Agent Template</p>
+            <p>Agent Template · Role 与技能建议</p>
           </div>
           <Button
             variant="primary"
+            class="playbooks-toolbar-btn"
             disabled={model.busyAction() || model.loading()}
             onClick={() => void handleCreate()}
           >
             <Plus size={14} />
-            新建
+            <span>新建</span>
           </Button>
         </header>
 
@@ -265,39 +266,43 @@ export function TemplatesPage(props: TemplatesPageProps) {
               <Show when={model.dirty()}>
                 <span class="templates-badge templates-badge--dirty">未保存</span>
               </Show>
+              <span class="templates-detail-id" title={selected()!.id}>
+                <code>{selected()!.id}</code>
+              </span>
             </div>
             <div class="templates-detail-panel__actions">
-              <Button
-                variant="secondary"
+              <IconButton
+                label="复制模板"
+                size="sm"
                 disabled={model.busyAction()}
                 onClick={() => void handleDuplicate()}
               >
-                <Copy size={14} />
-                复制
-              </Button>
+                <Copy size={15} />
+              </IconButton>
               <Show when={selected()!.source === "system"}>
-                <Button
-                  variant="secondary"
+                <IconButton
+                  label="恢复出厂"
+                  size="sm"
                   disabled={model.busyAction()}
                   onClick={requestReset}
                 >
-                  <RotateCcw size={14} />
-                  恢复出厂
-                </Button>
+                  <RotateCcw size={15} />
+                </IconButton>
               </Show>
               <Show when={selected()!.source === "user"}>
-                <Button
-                  variant="secondary"
+                <IconButton
+                  label="删除模板"
+                  size="sm"
                   disabled={model.busyAction()}
                   onClick={requestDelete}
                 >
-                  <Trash2 size={14} />
-                  删除
-                </Button>
+                  <Trash2 size={15} />
+                </IconButton>
               </Show>
               <Show when={model.dirty()}>
                 <Button
                   variant="secondary"
+                  class="playbooks-toolbar-btn"
                   disabled={model.saving()}
                   onClick={() => model.discardDraft()}
                 >
@@ -306,11 +311,12 @@ export function TemplatesPage(props: TemplatesPageProps) {
               </Show>
               <Button
                 variant="primary"
+                class="playbooks-toolbar-btn"
                 disabled={!model.dirty() || model.saving()}
                 onClick={() => void handleSave()}
               >
                 <Save size={14} />
-                {model.saving() ? "保存中…" : "保存"}
+                <span>{model.saving() ? "保存中…" : "保存"}</span>
               </Button>
             </div>
           </header>

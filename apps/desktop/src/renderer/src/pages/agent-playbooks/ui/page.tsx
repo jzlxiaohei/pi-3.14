@@ -417,7 +417,7 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
                           <label class="playbooks-stepper__field playbooks-stepper__field--full">
                             <span>Starter（建议首条）</span>
                             <textarea
-                              rows={2}
+                              rows={5}
                               value={step.starterPrompt}
                               placeholder={"/skill-name\n\n任务说明…"}
                               onInput={(event) =>

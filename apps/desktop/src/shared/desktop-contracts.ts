@@ -40,6 +40,15 @@ export type TaskWorkflowStepStatus = "pending" | "active" | "done" | "skipped";
 export type TaskWorkflowStep = {
   id: string;
   status: TaskWorkflowStepStatus;
+  /**
+   * Agent Template this step binds (business binding).
+   * Stamped from the playbook catalog at Task create; overridable per Task.
+   * `ensureStepAgent` snapshots this id — not a parallel code map.
+   * Older catalogs may omit it; readers backfill from the playbook catalog.
+   */
+  templateId?: string;
+  /** Composer prefill when entering the step (stamped from catalog). */
+  starterPrompt?: string;
   /** Bound Agent for this step’s PI Session (lazy on first open/advance). */
   agentId?: string;
 };

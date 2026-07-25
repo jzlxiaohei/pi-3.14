@@ -1,4 +1,5 @@
 import type { SkillPolicy, TaskPlaybookId } from "./desktop-contracts";
+import { catalogTemplateIdForStep } from "./playbook-catalog";
 
 /** Stable system Agent Template ids for playbook steps. */
 export type SystemTemplateId =
@@ -113,21 +114,14 @@ export const SYSTEM_TEMPLATE_SEEDS: SystemTemplateSeed[] = [
   },
 ];
 
-/** playbookId + stepId → system template id */
+/**
+ * Catalog default template id for a playbook step.
+ * Prefer `step.templateId` on Task.workflow for instance binding (ensure path).
+ */
 export function templateIdForPlaybookStep(
-  playbookId: TaskPlaybookId,
+  playbookId: TaskPlaybookId | string,
   stepId: string,
 ): SystemTemplateId | null {
-  const key = `${playbookId}/${stepId}`;
-  const map: Record<string, SystemTemplateId> = {
-    "feature-default/grilling": "tpl:feature-default/grilling",
-    "feature-default/to-spec": "tpl:feature-default/to-spec",
-    "feature-default/implement": "tpl:feature-default/implement",
-    "small-tdd/tdd": "tpl:small-tdd/tdd",
-    "small-tdd/code-review": "tpl:small-tdd/code-review",
-    "bugfix/diagnosing-bugs": "tpl:bugfix/diagnosing-bugs",
-    "bugfix/tdd": "tpl:bugfix/tdd",
-    "bugfix/code-review": "tpl:bugfix/code-review",
-  };
-  return map[key] ?? null;
+  const id = catalogTemplateIdForStep(playbookId, stepId);
+  return id as SystemTemplateId | null;
 }

@@ -58,7 +58,12 @@ import {
   buildBranchSpineView,
   buildBranchTree,
 } from "../../shared/branch-tree";
-import { templateIdForPlaybookStep } from "../../shared/playbook-templates";
+import {
+  buildHandoffPrefill,
+  createWorkflowFromPlaybook,
+  resolveStepStarter,
+  resolveStepTemplateId,
+} from "../../shared/playbook-catalog";
 import { projectSessionToTimeline } from "../../shared/project-timeline";
 import { snapshotAtLeaf } from "../../shared/session-leaf";
 import type { PieStore } from "../persistence/pie-store";
@@ -192,7 +197,7 @@ export class PiRuntimeManager {
       task = existing;
     } else {
       const workflow = options.playbookId
-        ? createWorkflowShell(options.playbookId)
+        ? createWorkflowFromPlaybook(options.playbookId)
         : null;
       task = await this.tasks.createTask({
         cwd,
@@ -408,10 +413,27 @@ export class PiRuntimeManager {
       if (existing) return existing;
     }
 
-    const templateId = templateIdForPlaybookStep(task.workflow.playbookId, stepId);
+    // Instance stamp wins (per-task rebind); catalog fills legacy steps.
+    const templateId = resolveStepTemplateId(task.workflow, stepId);
     if (!templateId) throw new Error(`No template for ${task.workflow.playbookId}/${stepId}`);
     const template = await this.tasks.getTemplate(templateId);
-    if (!template) throw new Error(`Missing system template: ${templateId}`);
+    if (!template) throw new Error(`Missing template: ${templateId}`);
+
+    // Persist stamp so UI / later ensures see the binding even on legacy tasks.
+    if (!step.templateId || step.templateId !== templateId) {
+      const steps = task.workflow.steps.map((s) =>
+        s.id === stepId
+          ? {
+              ...s,
+              templateId,
+              starterPrompt: s.starterPrompt ?? resolveStepStarter(task.workflow!, stepId),
+            }
+          : s,
+      );
+      await this.tasks.updateTask(taskId, {
+        workflow: { ...task.workflow, steps },
+      });
+    }
 
     const agentId = randomUUID();
     const state = await this.bindHost(agentId, {
@@ -640,7 +662,8 @@ export class PiRuntimeManager {
     const nextAgent = await this.ensureStepAgent(task.id, nextStepId, handoff);
     await this.activateAgent(sender, nextAgent.id, { force: true });
 
-    const starter = starterPromptForStep(workflow.playbookId, nextStepId);
+    const refreshed = (await this.tasks.getTask(task.id))!;
+    const starter = resolveStepStarter(refreshed.workflow ?? nextWorkflow, nextStepId);
     const starterPrompt = buildHandoffPrefill(starter, handoff);
 
     return {
@@ -1657,52 +1680,6 @@ export class PiRuntimeManager {
 function folderTitle(cwd: string): string {
   const name = cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;
   return `New task · ${name}`;
-}
-
-function createWorkflowShell(playbookId: TaskPlaybookId): TaskWorkflow {
-  const stepsByPlaybook: Record<TaskPlaybookId, string[]> = {
-    "feature-default": ["grilling", "to-spec", "implement"],
-    "small-tdd": ["tdd", "code-review"],
-    bugfix: ["diagnosing-bugs", "tdd", "code-review"],
-  };
-  const ids = stepsByPlaybook[playbookId];
-  return {
-    playbookId,
-    stepId: ids[0]!,
-    steps: ids.map((id, index) => ({
-      id,
-      status: index === 0 ? ("active" as const) : ("pending" as const),
-    })),
-  };
-}
-
-const STARTER_BY_STEP: Record<string, string> = {
-  "feature-default/grilling":
-    "/grill-with-docs\n\n帮我把这个功能的需求、约束和未决问题问清楚。",
-  "feature-default/to-spec":
-    "/to-spec\n\n根据以上讨论起草可执行规格；不要重新发散需求。",
-  "feature-default/implement":
-    "/implement\n\n按已定规格实现；实现阶段不要重新讨论需求。",
-  "small-tdd/tdd":
-    "/tdd\n\n按 TDD 完成这个小改动：一次一个 red-green-refactor 循环。",
-  "small-tdd/code-review": "/code-review\n\n审查刚才的改动，指出风险与遗漏。",
-  "bugfix/diagnosing-bugs":
-    "/diagnosing-bugs\n\n帮我定位这个 bug 的根因，先别急着改。",
-  "bugfix/tdd":
-    "/tdd\n\n针对已定位的根因补测试并修复，走完 red-green-refactor。",
-  "bugfix/code-review":
-    "/code-review\n\n审查这次 bug 修复是否完整、有无回归风险。",
-};
-
-function starterPromptForStep(playbookId: TaskPlaybookId, stepId: string): string {
-  return STARTER_BY_STEP[`${playbookId}/${stepId}`] ?? `/${stepId}`;
-}
-
-function buildHandoffPrefill(starter: string, handoff?: string | null): string {
-  const block = handoff?.trim()
-    ? `## Handoff from previous step\n\n${handoff.trim()}\n\n---\n\n`
-    : "";
-  return `${block}${starter}`;
 }
 
 async function fileExists(path: string): Promise<boolean> {

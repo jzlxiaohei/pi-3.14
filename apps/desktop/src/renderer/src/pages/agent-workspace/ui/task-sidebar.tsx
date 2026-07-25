@@ -18,11 +18,11 @@ import {
   draggable,
   dropTargetForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { WorkspaceTask } from "../../../../../shared/desktop-contracts";
 import { formatRelative, type WorkspaceModel } from "../model";
 import {
-  workflowSidebarSteps,
+  taskNestedSidebarRows,
   type WorkflowSidebarStepRow,
 } from "../workflow/sidebar-steps";
 import { writeClipboardText } from "@/shared/clipboard";
@@ -33,14 +33,17 @@ import { ArchiveTaskDialog } from "./delete-task-dialog";
 import { TaskIdChip } from "./task-id-chip";
 
 type TaskSidebarProps = {
-  /** Task id currently binding (Root or step Child) — drives row spinners. */
+  /** Task/Agent id currently binding — drives row spinners. */
   loadingTaskId?: string | null;
-  /** Open PI Session’s Task (may be a Child under the selected Root). */
+  /** Active Task (sidebar highlight context). */
   activeTaskId?: string | null;
+  /** Active Agent (open session highlight on nested steps). */
+  activeAgentId?: string | null;
   model: WorkspaceModel;
   onCollapse: () => void;
   onNewTask: () => void;
   onSelectTask: (id: string) => void;
+  onSelectAgent?: (id: string) => void;
   onArchiveTask: (id: string) => void | Promise<void>;
   onUnarchiveTask: (id: string) => void | Promise<void>;
 };
@@ -125,11 +128,19 @@ export function TaskSidebar(props: TaskSidebarProps) {
         <Show
           when={props.model.taskGroups().length > 0}
           fallback={
-            <p class="sidebar-empty">
-              {props.model.archivedCount() > 0 && !props.model.showArchived()
-                ? "没有进行中的任务。勾选上方可查看已归档。"
-                : "No tasks yet. Create one to start a PI session."}
-            </p>
+            <div class="sidebar-empty">
+              <p>
+                {props.model.archivedCount() > 0 && !props.model.showArchived()
+                  ? "没有进行中的任务。勾选上方可查看已归档。"
+                  : "还没有 Task。点上方 New task 或按 ⌘N 新建。"}
+              </p>
+              <Show when={props.model.archivedCount() === 0 || props.model.showArchived()}>
+                <Button class="new-task" variant="secondary" onClick={props.onNewTask}>
+                  <Plus size={16} strokeWidth={2.4} />
+                  New task
+                </Button>
+              </Show>
+            </div>
           }
         >
           <For each={props.model.taskGroups()}>
@@ -161,12 +172,15 @@ export function TaskSidebar(props: TaskSidebarProps) {
                         {(task, index) => (
                           <RootTaskBlock
                             task={task}
+                            model={props.model}
                             nextTaskId={() => group.tasks[index() + 1]?.id ?? null}
                             selectedTaskId={props.model.selectedTaskId}
                             activeTaskId={() => props.activeTaskId ?? null}
+                            activeAgentId={() => props.activeAgentId ?? null}
                             loadingTaskId={() => props.loadingTaskId ?? null}
                             busy={archiving()}
                             onSelectTask={props.onSelectTask}
+                            onSelectAgent={props.onSelectAgent}
                             onArchive={() => setPendingArchive(task)}
                             onUnarchive={() => void props.onUnarchiveTask(task.id)}
                             onMove={(taskId, beforeTaskId) =>
@@ -182,19 +196,6 @@ export function TaskSidebar(props: TaskSidebarProps) {
             }}
           </For>
         </Show>
-      </div>
-
-      <div class="sidebar-footer">
-        <span class="usage-ring">{Math.min(99, props.model.activeCount())}</span>
-        <span class="sidebar-footer-copy">
-          <strong>Saved tasks</strong>
-          <small>
-            {props.model.archivedCount() > 0
-              ? `${props.model.activeCount()} active · ${props.model.archivedCount()} archived`
-              : "Persisted locally with session resume"}
-          </small>
-        </span>
-        <ChevronRight size={15} />
       </div>
 
       <ArchiveTaskDialog
@@ -214,20 +215,39 @@ function RootTaskBlock(props: {
   nextTaskId: () => string | null;
   selectedTaskId: () => string | null;
   activeTaskId: () => string | null;
+  activeAgentId: () => string | null;
   loadingTaskId: () => string | null;
   busy: boolean;
+  model: WorkspaceModel;
   onSelectTask: (id: string) => void;
+  onSelectAgent?: (id: string) => void;
   onArchive: () => void;
   onUnarchive: () => void;
   onMove: (taskId: string, beforeTaskId: string | null) => void;
 }) {
   const selected = createMemo(() => props.selectedTaskId() === props.task.id);
-  const stepRows = createMemo(() =>
-    selected() ? workflowSidebarSteps(props.task.workflow, props.activeTaskId()) : [],
-  );
+  // Keep agents warm when selected so clearing the playbook still leaves step entries.
+  createEffect(() => {
+    if (!selected()) return;
+    void props.model.refreshAgents(props.task.id);
+  });
+  const stepRows = createMemo(() => {
+    if (!selected()) return [];
+    return taskNestedSidebarRows(
+      props.task.workflow,
+      props.model.agentsForTask(props.task.id),
+      props.activeAgentId(),
+    );
+  });
+
+  const expanded = createMemo(() => stepRows().length > 0);
 
   return (
-    <div class="task-block">
+    <div
+      class="task-block"
+      data-selected={selected() ? "true" : undefined}
+      data-expanded={expanded() ? "true" : undefined}
+    >
       <SortableTaskRow
         task={props.task}
         nextTaskId={props.nextTaskId}
@@ -239,15 +259,15 @@ function RootTaskBlock(props: {
         onUnarchive={props.onUnarchive}
         onMove={props.onMove}
       />
-      <Show when={stepRows().length > 0}>
-        <div class="task-step-list" role="list">
+      <Show when={expanded()}>
+        <div class="task-step-list" role="list" aria-label="Sessions under this task">
           <For each={stepRows()}>
             {(row) => (
               <WorkflowStepRow
                 row={row}
                 loadingTaskId={props.loadingTaskId}
                 onSelect={() => {
-                  if (row.taskId) props.onSelectTask(row.taskId);
+                  if (row.agentId) props.onSelectAgent?.(row.agentId);
                 }}
               />
             )}
@@ -264,7 +284,7 @@ function WorkflowStepRow(props: {
   onSelect: () => void;
 }) {
   const opening = createMemo(
-    () => Boolean(props.row.taskId) && props.loadingTaskId() === props.row.taskId,
+    () => Boolean(props.row.agentId) && props.loadingTaskId() === props.row.agentId,
   );
   const clickable = createMemo(() => props.row.clickable && !opening());
 
@@ -298,7 +318,16 @@ function WorkflowStepRow(props: {
             <LoaderCircle class="at-spin" size={11} />
           </Show>
         </span>
-        <span class="task-step-row__label">{props.row.label}</span>
+        <span class="task-step-row__label">
+          {props.row.label}
+          <Show when={props.row.templateId}>
+            {(tid) => (
+              <span class="task-step-row__template" title={tid()}>
+                {tid()}
+              </span>
+            )}
+          </Show>
+        </span>
       </button>
     </div>
   );

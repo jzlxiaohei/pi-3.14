@@ -45,6 +45,14 @@ export function RolePromptBanner(props: RolePromptBannerProps) {
               <strong>确认本步角色</strong>
               <span>
                 <code>{agent().name}</code>
+                <Show when={agent().templateId}>
+                  {(tid) => (
+                    <>
+                      {" · 模板 "}
+                      <code title={tid()}>{tid()}</code>
+                    </>
+                  )}
+                </Show>
                 {" · "}
                 {preview()}
               </span>

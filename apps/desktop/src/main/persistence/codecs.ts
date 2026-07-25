@@ -1,7 +1,10 @@
 import type {
+  SkillPolicy,
+  TaskStatus,
   TaskWorkflow,
-  WorkspaceTaskStatus,
 } from "../../shared/desktop-contracts";
+import { normalizeWorkflowBindings } from "../../shared/playbook-catalog";
+import { isAgentStatus } from "../../shared/task-status";
 
 export type LegacyTask = {
   id: string;
@@ -9,7 +12,7 @@ export type LegacyTask = {
   cwd: string;
   sessionPath: string | null;
   sessionId: string | null;
-  status: WorkspaceTaskStatus;
+  status: TaskStatus;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
@@ -67,7 +70,7 @@ function parseLegacyTask(value: unknown): LegacyTask | null {
     cwd: raw.cwd,
     sessionPath: typeof raw.sessionPath === "string" ? raw.sessionPath : null,
     sessionId: typeof raw.sessionId === "string" ? raw.sessionId : null,
-    status: isStatus(raw.status) ? raw.status : "idle",
+    status: isAgentStatus(raw.status) ? raw.status : "idle",
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   };
@@ -83,9 +86,25 @@ export function parseWorkflow(value: string | null): TaskWorkflow | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value) as unknown;
-    return isWorkflow(parsed) ? parsed : undefined;
+    if (!isWorkflow(parsed)) return undefined;
+    return normalizeWorkflowBindings(parsed);
   } catch {
     return undefined;
+  }
+}
+
+export function parseSkillPolicy(value: string): SkillPolicy {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null) {
+      return { ignoredSkillNames: [] };
+    }
+    const names = (parsed as { ignoredSkillNames?: unknown }).ignoredSkillNames;
+    return {
+      ignoredSkillNames: isStringArray(names) ? uniqueStrings(names) : [],
+    };
+  } catch {
+    return { ignoredSkillNames: [] };
   }
 }
 
@@ -100,16 +119,6 @@ export function parseStringArray(value: string): string[] {
 
 export function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function isStatus(value: unknown): value is WorkspaceTaskStatus {
-  return (
-    value === "idle" ||
-    value === "running" ||
-    value === "done" ||
-    value === "error" ||
-    value === "interrupted"
-  );
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -129,7 +138,10 @@ function isWorkflow(value: unknown): value is TaskWorkflow {
         (step.status === "pending" ||
           step.status === "active" ||
           step.status === "done" ||
-          step.status === "skipped"),
+          step.status === "skipped") &&
+        (step.agentId === undefined || typeof step.agentId === "string") &&
+        (step.templateId === undefined || typeof step.templateId === "string") &&
+        (step.starterPrompt === undefined || typeof step.starterPrompt === "string"),
     )
   );
 }

@@ -102,6 +102,8 @@ export function AppShell(props: AppShellProps) {
   const [pendingEdit, setPendingEdit] = createSignal<PendingEdit | null>(null);
   const [mainView, setMainView] = createSignal<MainView>("workspace");
   const [templatesModel, setTemplatesModel] = createSignal<TemplatesModel | null>(null);
+  /** Deep-link into Templates admin (e.g. from workflow step binding). */
+  const [templatesFocusId, setTemplatesFocusId] = createSignal<string | null>(null);
   const [leaveTemplatesConfirm, setLeaveTemplatesConfirm] = createSignal(false);
   const [tasksOpenBeforeTemplates, setTasksOpenBeforeTemplates] = createSignal(true);
   const [skillFilterBusy, setSkillFilterBusy] = createSignal(false);
@@ -289,11 +291,27 @@ export function AppShell(props: AppShellProps) {
     }
   }
 
-  function requestTemplates(): void {
-    if (mainView() === "templates") return;
+  function requestTemplates(focusTemplateId?: string): void {
+    if (focusTemplateId) setTemplatesFocusId(focusTemplateId);
+    if (mainView() === "templates") {
+      const id = templatesFocusId();
+      const tm = templatesModel();
+      if (id && tm) {
+        void tm.refresh(id).finally(() => setTemplatesFocusId(null));
+      }
+      return;
+    }
     setTasksOpenBeforeTemplates(props.model.tasksOpen());
     if (props.model.tasksOpen()) props.model.setTasksOpen(false);
     setMainView("templates");
+  }
+
+  function onTemplatesModelReady(model: TemplatesModel): void {
+    setTemplatesModel(model);
+    const id = templatesFocusId();
+    if (id) {
+      void model.refresh(id).finally(() => setTemplatesFocusId(null));
+    }
   }
 
   function requestTasksFromRail(): void {
@@ -713,7 +731,7 @@ export function AppShell(props: AppShellProps) {
           />
           <Show when={mainView() === "templates"}>
             <div class="templates-shell">
-              <TemplatesPage onModelReady={setTemplatesModel} />
+              <TemplatesPage onModelReady={onTemplatesModelReady} />
             </div>
           </Show>
           <Show when={mainView() === "workspace"}>
@@ -895,6 +913,7 @@ export function AppShell(props: AppShellProps) {
                             onWorkflowChange={(next, starter) => {
                               void persistWorkflow(next, starter);
                             }}
+                            onOpenTemplate={(templateId) => requestTemplates(templateId)}
                           />
                         </div>
                       )}
@@ -989,6 +1008,7 @@ export function AppShell(props: AppShellProps) {
                           onWorkflowChange={(next, starter) => {
                             void persistWorkflow(next, starter);
                           }}
+                          onOpenTemplate={(templateId) => requestTemplates(templateId)}
                         />
                       ) : undefined
                     }

@@ -1,6 +1,6 @@
-import { Check, ChevronDown, ChevronUp, Route, SkipForward, X } from "lucide-solid";
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import type { TaskWorkflow } from "../../../../../shared/desktop-contracts";
+import { Check, ChevronDown, ChevronUp, LayoutTemplate, Route, SkipForward } from "lucide-solid";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import type { AgentTemplate, TaskWorkflow } from "../../../../../shared/desktop-contracts";
 import { Button } from "@/shared/ui/button";
 import { IconButton } from "@/shared/ui/icon-button";
 import { advanceWorkflow, workflowView } from "../workflow/playbooks";
@@ -10,6 +10,8 @@ const LEAVE_MS = 180;
 type WorkflowStepsProps = {
   disabled?: boolean;
   workflow: TaskWorkflow;
+  /** Done → handoff generation in progress. */
+  advancing?: boolean;
   /** gutter = reserved side rail; overlay = compact float when gutter is hidden. */
   placement?: "gutter" | "overlay";
   onWorkflowChange: (workflow: TaskWorkflow | null, starterPrompt: string | null) => void;
@@ -18,17 +20,38 @@ type WorkflowStepsProps = {
    * (e.g. spawn next step subagent session).
    */
   onStepAdvance?: (mode: "done" | "skipped") => void;
+  /** Open Templates library focused on a template id (discover binding). */
+  onOpenTemplate?: (templateId: string) => void;
 };
 
 /**
- * Playbook step card. Parent keeps it mounted while `workflow` is set; dismiss
- * (Done / clear) fades out before calling `onWorkflowChange(null, …)`.
+ * Playbook step card. Parent keeps it mounted while `workflow` is set.
+ * Collapse only hides chrome; mid-path there is no “remove path” control —
+ * only a completed playbook can clear via 清除路径.
  */
 export function WorkflowSteps(props: WorkflowStepsProps) {
   const [expanded, setExpanded] = createSignal(true);
   const [phase, setPhase] = createSignal<"enter" | "shown" | "leave">("enter");
   const [stepPulse, setStepPulse] = createSignal(false);
+  const [templates, setTemplates] = createSignal<AgentTemplate[]>([]);
   const view = createMemo(() => workflowView(props.workflow));
+  const currentStep = createMemo(() =>
+    props.workflow.steps.find((s) => s.id === props.workflow.stepId),
+  );
+  const templateId = createMemo(
+    () => currentStep()?.templateId ?? view().stepTemplateId,
+  );
+  const templateMeta = createMemo(() => {
+    const id = templateId();
+    if (!id) return null;
+    const row = templates().find((t) => t.id === id);
+    return { id, name: row?.name ?? id, source: row?.source };
+  });
+  const agentBound = createMemo(() => Boolean(currentStep()?.agentId));
+
+  onMount(() => {
+    void window.piDesktop.templates.list().then(setTemplates).catch(() => setTemplates([]));
+  });
 
   let leaveTimer: number | undefined;
   let enterFrame: number | undefined;
@@ -98,6 +121,17 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
     dismiss(null, null);
   }
 
+  /** Per-task rebind: only while this step has no Agent yet. */
+  function rebindTemplate(nextTemplateId: string): void {
+    if (agentBound() || props.disabled || phase() === "leave") return;
+    const id = nextTemplateId.trim();
+    if (!id) return;
+    const steps = props.workflow.steps.map((step) =>
+      step.id === props.workflow.stepId ? { ...step, templateId: id } : step,
+    );
+    props.onWorkflowChange({ ...props.workflow, steps }, null);
+  }
+
   return (
     <div
       class="workflow-steps"
@@ -144,19 +178,63 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
               >
                 <ChevronDown size={14} />
               </IconButton>
-              <IconButton
-                label="Remove engineering path"
-                size="sm"
-                disabled={props.disabled || phase() === "leave"}
-                onClick={clear}
-              >
-                <X size={14} />
-              </IconButton>
             </div>
           </div>
           <div class="workflow-steps__body">
             <p class="workflow-steps__step">{view().stepDef.label}</p>
             <p class="workflow-steps__blurb">{view().stepDef.blurb}</p>
+            <Show when={templateMeta()}>
+              {(meta) => (
+                <div class="workflow-steps__template" data-bound={agentBound() ? "true" : "false"}>
+                  <LayoutTemplate size={13} />
+                  <div class="workflow-steps__template-copy">
+                    <span class="workflow-steps__template-label">Agent Template</span>
+                    <Show
+                      when={!agentBound()}
+                      fallback={
+                        <button
+                          type="button"
+                          class="workflow-steps__template-link"
+                          disabled={!props.onOpenTemplate}
+                          onClick={() => props.onOpenTemplate?.(meta().id)}
+                          title={meta().id}
+                        >
+                          {meta().name}
+                          <span class="workflow-steps__template-id">{meta().id}</span>
+                        </button>
+                      }
+                    >
+                      <select
+                        class="workflow-steps__template-select"
+                        value={meta().id}
+                        disabled={props.disabled || phase() === "leave"}
+                        onChange={(event) => rebindTemplate(event.currentTarget.value)}
+                        title="本步尚未创建 Agent 时可改绑定"
+                      >
+                        <For each={templates()}>
+                          {(row) => (
+                            <option value={row.id}>
+                              {row.source === "system" ? "系统" : "用户"} · {row.name}
+                            </option>
+                          )}
+                        </For>
+                        <Show when={!templates().some((t) => t.id === meta().id)}>
+                          <option value={meta().id}>{meta().name}</option>
+                        </Show>
+                      </select>
+                    </Show>
+                  </div>
+                  <Show when={agentBound()}>
+                    <span class="workflow-steps__template-hint">已创建 Agent · 绑定已锁定</span>
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={props.advancing}>
+              <p class="workflow-steps__advancing" aria-live="polite">
+                正在生成步骤交接摘要…
+              </p>
+            </Show>
             <div class="workflow-steps__actions">
               <Show
                 when={!view().completed}
@@ -187,7 +265,7 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
                       disabled={props.disabled || phase() === "leave"}
                       onClick={() => advance("done")}
                     >
-                      Next
+                      {props.advancing ? "交接中…" : "Next"}
                     </Button>
                   }
                 >
@@ -197,7 +275,7 @@ export function WorkflowSteps(props: WorkflowStepsProps) {
                     onClick={() => advance("done")}
                   >
                     <Check size={14} />
-                    Done
+                    {props.advancing ? "交接中…" : "Done"}
                   </Button>
                 </Show>
               </Show>

@@ -9,7 +9,12 @@ import {
   X,
 } from "lucide-solid";
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import type { AgentTemplate } from "../../../../../shared/desktop-contracts";
+import type {
+  AgentTemplate,
+  PersonalSkillInfo,
+} from "../../../../../shared/desktop-contracts";
+import { SkillNameCombobox } from "@/features/skill-suggest/SkillNameCombobox";
+import { loadPersonalSkills } from "@/features/skill-suggest/load-personal-skills";
 import { Button } from "@/shared/ui/button";
 import { Dialog } from "@/shared/ui/dialog";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -30,13 +35,17 @@ export function TemplatesPage(props: TemplatesPageProps) {
   const [confirm, setConfirm] = createSignal<
     null | { kind: "discard"; nextId: string | null } | { kind: "delete" } | { kind: "reset" }
   >(null);
-  const [skillInput, setSkillInput] = createSignal("");
+  const [personalSkills, setPersonalSkills] = createSignal<PersonalSkillInfo[]>([]);
+  const [skillsLoading, setSkillsLoading] = createSignal(true);
 
   onMount(() => {
     props.onModelReady?.(model);
     void model.refresh().catch((err) => {
       notifyError("加载模板失败", err instanceof Error ? err.message : String(err));
     });
+    void loadPersonalSkills()
+      .then(setPersonalSkills)
+      .finally(() => setSkillsLoading(false));
   });
 
   createEffect(() => {
@@ -165,14 +174,13 @@ export function TemplatesPage(props: TemplatesPageProps) {
     }
   }
 
-  function addIgnoredSkill(): void {
-    const name = skillInput().trim();
-    if (!name) return;
+  function addIgnoredSkill(name: string): void {
+    const next = name.trim();
+    if (!next) return;
     const current = model.draft()?.ignoredSkillNames ?? [];
-    if (!current.includes(name)) {
-      model.setIgnoredSkillNames([...current, name]);
+    if (!current.includes(next)) {
+      model.setIgnoredSkillNames([...current, next]);
     }
-    setSkillInput("");
   }
 
   function discardConfirmMessage(): string {
@@ -359,25 +367,16 @@ export function TemplatesPage(props: TemplatesPageProps) {
             <div class="templates-field templates-field--block">
               <span>技能忽略</span>
               <p class="templates-hint">
-                与 Agent 技能忽略相同：下列名称不会在实例化后的 skill 列表中展示给模型。
+                与 Agent 技能忽略相同：下列名称不会在实例化后的 skill 列表中展示给模型。可从本机
+                ~/.pi/agent/skills 选择，或手输名称。
               </p>
-              <div class="templates-skill-add">
-                <input
-                  type="text"
-                  placeholder="技能名称"
-                  value={skillInput()}
-                  onInput={(event) => setSkillInput(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      addIgnoredSkill();
-                    }
-                  }}
-                />
-                <Button variant="secondary" onClick={addIgnoredSkill}>
-                  添加
-                </Button>
-              </div>
+              <SkillNameCombobox
+                skills={personalSkills()}
+                loading={skillsLoading()}
+                exclude={draft()?.ignoredSkillNames ?? []}
+                placeholder="搜索或输入技能名称"
+                onAdd={addIgnoredSkill}
+              />
               <Show
                 when={(draft()?.ignoredSkillNames.length ?? 0) > 0}
                 fallback={<p class="templates-muted">未忽略任何技能</p>}

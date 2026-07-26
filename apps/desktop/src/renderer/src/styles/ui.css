@@ -470,6 +470,30 @@
   overflow: hidden;
 }
 
+.orbit-dialog__positioner:has(.orbit-dialog__content--session-map) {
+  padding: var(--topbar-height) 12px 12px;
+  align-content: stretch;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
+.orbit-dialog__content--session-map {
+  width: min(1200px, calc(100vw - 24px));
+  height: calc(100vh - var(--topbar-height) - 12px);
+  max-width: none;
+  max-height: calc(100vh - var(--topbar-height) - 12px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .orbit-dialog__content--session-map {
+    width: calc(100vw - 24px);
+  }
+}
+
 .orbit-dialog__content--review .review-window {
   flex: 1 1 auto;
   height: 100%;

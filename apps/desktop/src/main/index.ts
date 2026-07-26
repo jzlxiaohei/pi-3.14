@@ -3,7 +3,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, s
 import { isAbsolute, normalize, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installMattSkills, readMattSkillsStatus } from "./pi/install-matt-skills";
-import { personalSkillsDir, writePersonalSkill } from "./pi/personal-skills";
+import { listPersonalSkills, personalSkillsDir, writePersonalSkill } from "./pi/personal-skills";
 import { getProviderUsageSnapshots } from "./pi/provider-usage";
 import { PiRuntimeManager } from "./pi/runtime-manager";
 import { openPieStore, type PieStore } from "./persistence/pie-store";
@@ -444,6 +444,7 @@ app.whenReady().then(() => {
   );
 
   ipcMain.handle("skills:personal-dir", () => ({ dir: personalSkillsDir() }));
+  ipcMain.handle("skills:list-personal", () => listPersonalSkills());
   ipcMain.handle("skills:write-personal", (_event, request: PersonalSkillWriteRequest) => {
     return writePersonalSkill(request);
   });
@@ -512,6 +513,14 @@ app.whenReady().then(() => {
       return piRuntime.inspectSession(options);
     },
   );
+
+  ipcMain.handle("pi:session:map", () => {
+    return piRuntime.getSessionMap();
+  });
+
+  ipcMain.handle("pi:session:map-context", (_event, request) => {
+    return piRuntime.getSessionMapContext(request);
+  });
 
   ipcMain.handle("usage:provider-quotas", (_event, force?: boolean) => {
     return getProviderUsageSnapshots(Boolean(force));

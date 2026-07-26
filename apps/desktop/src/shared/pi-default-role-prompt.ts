@@ -2,10 +2,14 @@
  * PI coding-agent default **role base** snapshot (pi-coding-agent 0.82
  * `buildSystemPrompt` with the default tool set: read, bash, edit, write).
  *
- * Used only as UI fill when `Agent.systemPrompt` is empty. Live bind still uses
- * empty Role Prompt → full PI default assembly (tools/guidelines/docs paths
- * resolved on the host). Saving this exact fill normalizes back to empty so we
- * do not silently switch to replace mode.
+ * Split intentionally:
+ * - `PI_CODING_ROLE_BASE` — tools + guidelines only (no Pi docs). Product
+ *   coding seeds (e.g. implement) use this as an explicit Role Prompt so bind
+ *   is replace-mode without the pi-package docs block.
+ * - `PI_DEFAULT_ROLE_BASE` — coding base + Pi docs section. UI fill when
+ *   `Agent.systemPrompt` is empty (matches live empty → full PI default).
+ *   Saving that exact fill normalizes back to empty so we do not silently
+ *   switch to replace mode.
  *
  * Not included here (not Role Prompt): product appends (questionnaire),
  * `<project_context>`, skills list, or `Current working directory`.
@@ -13,7 +17,8 @@
  * Docs paths use `{piPackage}` — at bind PI substitutes the real install dir.
  */
 
-export const PI_DEFAULT_ROLE_BASE = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+/** Coding assistant base: identity, tools, guidelines — no Pi documentation. */
+export const PI_CODING_ROLE_BASE = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 - read: Read file contents
@@ -33,9 +38,9 @@ Guidelines:
 - Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.
 - Use write only for new files or complete rewrites.
 - Be concise in your responses
-- Show file paths clearly when working with files
+- Show file paths clearly when working with files`;
 
-Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+const PI_DOCS_SECTION = `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: {piPackage}/README.md
 - Additional docs: {piPackage}/docs
 - Examples: {piPackage}/examples (extensions, custom tools, SDK)
@@ -43,6 +48,11 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 - When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)
 - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
 - Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+
+/** Full PI default role base snapshot (coding + docs), for empty-Role UI fill. */
+export const PI_DEFAULT_ROLE_BASE = `${PI_CODING_ROLE_BASE}
+
+${PI_DOCS_SECTION}`;
 
 /** Display text for the Role Prompt editor / readonly view. */
 export function rolePromptEditorText(stored: string | null | undefined): string {
@@ -57,7 +67,8 @@ export function isRolePromptUnset(stored: string | null | undefined): boolean {
 
 /**
  * Map editor draft → catalog `systemPrompt`.
- * Empty or exact PI default fill → store empty (fallback to full PI default).
+ * Empty or exact full PI default fill → store empty (fallback to full PI default).
+ * Coding-only base (no docs) is kept as stored text so replace mode stays explicit.
  */
 export function normalizeRolePromptForSave(draft: string): string {
   const trimmed = draft.trim();

@@ -1,5 +1,6 @@
 import type { SkillPolicy, TaskPlaybookId } from "./desktop-contracts";
 import { catalogTemplateIdForStep } from "./playbook-catalog";
+import { PI_CODING_ROLE_BASE } from "./pi-default-role-prompt";
 
 /** Stable system Agent Template ids for playbook steps. */
 export type SystemTemplateId =
@@ -27,8 +28,10 @@ const EMPTY_SKILLS: SkillPolicy = { ignoredSkillNames: [] };
  * Design: thin playbook boundary only — methodology lives in Matt skills
  * (starter `/grill-with-docs`, `/to-spec`, …). Do not paraphrase skill bodies here.
  *
- * - Empty Role Prompt → full PI default coding base at bind.
+ * - Empty Role Prompt → full PI default coding base at bind (includes Pi docs).
  * - Non-empty → replaces PI base (keep short: identity + in/out of scope).
+ * - Coding steps that want PI tool/guideline fidelity without Pi docs use
+ *   `PI_CODING_ROLE_BASE` (explicit replace).
  * - Do not embed questionnaire protocol text.
  */
 export const SYSTEM_TEMPLATE_SEEDS: SystemTemplateSeed[] = [
@@ -59,8 +62,8 @@ export const SYSTEM_TEMPLATE_SEEDS: SystemTemplateSeed[] = [
   {
     id: "tpl:feature-default/implement",
     name: "implement",
-    // Empty → PI default coding base; step method via `/implement` skill + starter.
-    systemPrompt: "",
+    // PI coding base without Pi docs; step method via `/implement` skill + starter.
+    systemPrompt: PI_CODING_ROLE_BASE,
     skillPolicy: EMPTY_SKILLS,
   },
   {

@@ -12,7 +12,15 @@ import {
   X,
 } from "lucide-solid";
 import { For, Show, createEffect, createSignal, onMount } from "solid-js";
-import type { AgentTemplate } from "../../../../../shared/desktop-contracts";
+import type {
+  AgentTemplate,
+  PersonalSkillInfo,
+} from "../../../../../shared/desktop-contracts";
+import {
+  StarterSkillHints,
+  insertStarterSlashCommand,
+} from "@/features/skill-suggest/StarterSkillHints";
+import { loadPersonalSkills } from "@/features/skill-suggest/load-personal-skills";
 import { Button } from "@/shared/ui/button";
 import { Dialog } from "@/shared/ui/dialog";
 import { IconButton } from "@/shared/ui/icon-button";
@@ -27,6 +35,8 @@ type PlaybooksPageProps = {
 export function PlaybooksPage(props: PlaybooksPageProps) {
   const model = props.model ?? createPlaybooksModel();
   const [agentTemplates, setAgentTemplates] = createSignal<AgentTemplate[]>([]);
+  const [personalSkills, setPersonalSkills] = createSignal<PersonalSkillInfo[]>([]);
+  const [skillsLoading, setSkillsLoading] = createSignal(true);
   const [confirm, setConfirm] = createSignal<
     null | { kind: "discard"; nextId: string | null } | { kind: "delete" } | { kind: "reset" }
   >(null);
@@ -44,6 +54,9 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
       .list()
       .then(setAgentTemplates)
       .catch(() => setAgentTemplates([]));
+    void loadPersonalSkills()
+      .then(setPersonalSkills)
+      .finally(() => setSkillsLoading(false));
   });
 
   createEffect(() => {
@@ -407,7 +420,9 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
               <header class="playbooks-steps__head">
                 <div>
                   <h3>步骤</h3>
-                  <p>每步绑定 Agent Template；Starter 为建议首条（如 /skill），非强制挂载。</p>
+                  <p>
+                    每步绑定 Agent Template；Starter 为建议首条（可用下方 skill 提示插入 /name），非强制挂载。
+                  </p>
                 </div>
                 <Button
                   variant="secondary"
@@ -522,8 +537,21 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
                               </Show>
                             </select>
                           </label>
-                          <label class="playbooks-stepper__field playbooks-stepper__field--full">
+                          <div class="playbooks-stepper__field playbooks-stepper__field--full">
                             <span>Starter（建议首条）</span>
+                            <StarterSkillHints
+                              skills={personalSkills()}
+                              loading={skillsLoading()}
+                              starterValue={step.starterPrompt}
+                              onInsert={(slash) =>
+                                model.patchStep(index(), {
+                                  starterPrompt: insertStarterSlashCommand(
+                                    step.starterPrompt,
+                                    slash,
+                                  ),
+                                })
+                              }
+                            />
                             <textarea
                               rows={3}
                               value={step.starterPrompt}
@@ -534,7 +562,7 @@ export function PlaybooksPage(props: PlaybooksPageProps) {
                                 })
                               }
                             />
-                          </label>
+                          </div>
                         </div>
                       </div>
                     </li>

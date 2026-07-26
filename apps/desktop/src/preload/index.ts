@@ -16,6 +16,9 @@ import type {
   PiSessionCreateResult,
   PiSessionExportResult,
   PiSessionInspectResult,
+  PiSessionMapContextRequest,
+  PiSessionMapContextResult,
+  PiSessionMapSnapshot,
   PiSessionNavigateRequest,
   PiSessionNavigateResult,
   PiTasksBootstrap,
@@ -26,6 +29,7 @@ import type {
   PiTimelineSnapshot,
   PiToolApprovalReply,
   PiToolApprovalRequest,
+  PersonalSkillInfo,
   PersonalSkillWriteRequest,
   PersonalSkillWriteResult,
   PiWorkspacePickResult,
@@ -198,6 +202,9 @@ const api = {
       ipcRenderer.invoke("pi:session:get-timeline") as Promise<PiTimelineSnapshot>,
     inspect: (options?: { detail?: "full" | "hud" }) =>
       ipcRenderer.invoke("pi:session:inspect", options) as Promise<PiSessionInspectResult>,
+    map: () => ipcRenderer.invoke("pi:session:map") as Promise<PiSessionMapSnapshot>,
+    mapContext: (request: PiSessionMapContextRequest) =>
+      ipcRenderer.invoke("pi:session:map-context", request) as Promise<PiSessionMapContextResult>,
     navigate: (request: PiSessionNavigateRequest) =>
       ipcRenderer.invoke("pi:session:navigate", request) as Promise<PiSessionNavigateResult>,
     prepareBranchSummary: () =>
@@ -262,6 +269,7 @@ const api = {
   },
   skills: {
     personalDir: () => ipcRenderer.invoke("skills:personal-dir") as Promise<{ dir: string }>,
+    listPersonal: () => ipcRenderer.invoke("skills:list-personal") as Promise<PersonalSkillInfo[]>,
     writePersonal: (request: PersonalSkillWriteRequest) =>
       ipcRenderer.invoke("skills:write-personal", request) as Promise<PersonalSkillWriteResult>,
   },

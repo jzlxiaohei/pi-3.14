@@ -4,6 +4,7 @@ import {
   GitCompareArrows,
   GitFork,
   LoaderCircle,
+  Network,
   PanelRight,
   Route,
   X,
@@ -22,12 +23,15 @@ type TaskHeaderProps = {
   /** Playbook title when this task has an engineering path. */
   playbookTitle?: string | null;
   branchesOpen?: boolean;
+  sessionMapOpen?: boolean;
   canExportSession?: boolean;
   canOpenBranches?: boolean;
+  canOpenSessionMap?: boolean;
   onClearPlaybook?: () => void;
   onExportSession?: () => void;
   onReviewChanges?: () => void;
   onToggleBranches?: () => void;
+  onToggleSessionMap?: () => void;
   onToggleInspectorPanel?: () => void;
   status: TimelineRunStatus;
   taskStatus?: TaskStatus;
@@ -120,6 +124,15 @@ export function TaskHeader(props: TaskHeaderProps) {
           onClick={() => props.onToggleBranches?.()}
         >
           <GitFork size={16} />
+        </IconButton>
+        <IconButton
+          label="会话图 — 树结构与模型上下文路径"
+          size="sm"
+          active={props.sessionMapOpen}
+          disabled={props.loading || !props.canOpenSessionMap}
+          onClick={() => props.onToggleSessionMap?.()}
+        >
+          <Network size={16} />
         </IconButton>
         <Button
           variant="secondary"

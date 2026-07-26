@@ -306,7 +306,8 @@ Extend existing context preview; do not add a second editor surface.
 `SYSTEM_TEMPLATE_SEEDS[*].systemPrompt` uses **thin playbook boundaries** (not full skill bodies):
 
 - **Thin non-empty Role** — step identity + in/out of scope only (e.g. grill / to-spec / diagnose / review). Methodology lives in Matt skills triggered by playbook starters (`/grill-with-docs`, `/to-spec`, …).
-- **Empty Role** — full PI default coding base at bind. Used for coding-heavy steps (`implement`, `tdd`) where the step method is the skill, not a custom base.
+- **Coding Role (`PI_CODING_ROLE_BASE`)** — PI’s coding identity + tools/guidelines snapshot, **without** the Pi documentation block. Used when a coding step should replace the base cleanly in product (not develop pi itself).
+- **Empty Role** — full PI default coding base at bind (includes Pi docs). Used for other coding-heavy steps (`tdd`) until they opt into the coding snapshot.
 - MUST NOT embed questionnaire protocol, paraphrase entire skill markdown, or assume PI’s default opener is present when Role is non-empty (non-empty **replaces** PI base).
 
 Boot seed is **insert-only** (ADR-0005): missing system ids are inserted; existing rows are not overwritten. Use **Reset factory** (or a fresh catalog) to pick up seed text changes. **Already-created Agents keep their snapshotted text** until restore-from-template or user edit.
@@ -315,7 +316,7 @@ Boot seed is **insert-only** (ADR-0005): missing system ids are inserted; existi
 |---|---|
 | `tpl:feature-default/grilling` | Thin: discovery step boundary |
 | `tpl:feature-default/to-spec` | Thin: specification step boundary |
-| `tpl:feature-default/implement` | Empty → PI default; `/implement` skill |
+| `tpl:feature-default/implement` | `PI_CODING_ROLE_BASE` (no Pi docs); `/implement` skill |
 | `tpl:small-tdd/tdd` | Empty → PI default; `/tdd` skill |
 | `tpl:small-tdd/code-review` | Thin: review findings boundary |
 | `tpl:bugfix/diagnosing-bugs` | Thin: diagnosis step boundary |

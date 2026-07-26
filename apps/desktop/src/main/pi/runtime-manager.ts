@@ -42,6 +42,9 @@ import type {
   PiSessionCreateResult,
   PiSessionExportResult,
   PiSessionInspectResult,
+  PiSessionMapContextRequest,
+  PiSessionMapContextResult,
+  PiSessionMapSnapshot,
   PiSessionNavigateRequest,
   PiSessionNavigateResult,
   PiTasksBootstrap,
@@ -67,6 +70,12 @@ import {
 } from "../../shared/playbook-catalog";
 import { projectSessionToTimeline } from "../../shared/project-timeline";
 import { snapshotAtLeaf } from "../../shared/session-leaf";
+import {
+  buildSessionMapStructure,
+  clampPreview,
+  countSessionMapStats,
+  resolveSessionMapLeaf,
+} from "../../shared/session-map";
 import type { PieStore } from "../persistence/pie-store";
 
 const EMPTY_TIMELINE: PiTimelineSnapshot = { leafEntryId: null, items: [] };
@@ -1027,6 +1036,152 @@ export class PiRuntimeManager {
         branchFlow: EMPTY_BRANCH_FLOW,
       };
     }
+  }
+
+  /** Session Map structure (turn + entry graphs) for the active host session. */
+  async getSessionMap(): Promise<PiSessionMapSnapshot> {
+    const empty: PiSessionMapSnapshot = {
+      sessionId: null,
+      sessionPath: null,
+      liveLeafId: null,
+      turn: { nodes: [], edges: [], density: "turn" },
+      entry: { nodes: [], edges: [], density: "entry" },
+      analysis: {
+        branchPointCount: 0,
+        entryCount: 0,
+        messageCount: 0,
+        compactionCount: 0,
+      },
+      diagnostics: [],
+    };
+
+    let sessionPath: string | null = null;
+    let liveLeafId: string | null = null;
+    let sessionId: string | null = null;
+    try {
+      const hostId = this.requireActiveHostId();
+      const state = await this.getStateFor(hostId);
+      sessionPath = state.sessionPath;
+      liveLeafId = state.leafEntryId;
+      sessionId = state.sessionId;
+    } catch {
+      if (this.activeAgentId) {
+        const agent = await this.tasks.getAgent(this.activeAgentId);
+        sessionPath = agent?.sessionPath ?? null;
+        sessionId = agent?.sessionId ?? null;
+      }
+    }
+
+    if (!sessionPath && this.activeAgentId) {
+      sessionPath = (await this.tasks.getAgent(this.activeAgentId))?.sessionPath ?? null;
+    }
+    if (!sessionPath || !(await fileExists(sessionPath))) {
+      return { ...empty, sessionId, sessionPath, liveLeafId };
+    }
+
+    try {
+      const fileSnapshot = await this.loadSessionSnapshot(sessionPath);
+      const snapshot = snapshotAtLeaf(fileSnapshot, liveLeafId ?? fileSnapshot.leafId);
+      await yieldMain();
+      const turn = buildSessionMapStructure(snapshot, "turn");
+      await yieldMain();
+      const entry = buildSessionMapStructure(snapshot, "entry", { includeMetadata: true });
+      const stats = countSessionMapStats(snapshot);
+      return {
+        sessionId: sessionId ?? snapshot.header?.id ?? null,
+        sessionPath,
+        liveLeafId: snapshot.leafId,
+        turn,
+        entry,
+        analysis: stats,
+        diagnostics: snapshot.diagnostics,
+      };
+    } catch {
+      return { ...empty, sessionId, sessionPath, liveLeafId };
+    }
+  }
+
+  /** Context projection for a Session Map selection (preview leaf). */
+  async getSessionMapContext(
+    request: PiSessionMapContextRequest,
+  ): Promise<PiSessionMapContextResult> {
+    const selectionEntryId = request.selectionEntryId?.trim() ?? "";
+    let sessionPath: string | null = null;
+    let liveLeafId: string | null = null;
+    let liveHud: PiSessionMapContextResult["liveHud"] = null;
+
+    try {
+      const hostId = this.requireActiveHostId();
+      const state = await this.getStateFor(hostId);
+      sessionPath = state.sessionPath;
+      liveLeafId = state.leafEntryId;
+      try {
+        const live = (await this.send({
+          id: randomUUID(),
+          hostId,
+          type: "inspect_live",
+          detail: "summary",
+        })) as import("@pi-3.14/model").PiLiveInspectSnapshot;
+        liveHud = {
+          skillNames: (live.skills ?? []).map((s) => s.name).filter(Boolean),
+          toolNames: live.activeToolNames?.length
+            ? live.activeToolNames
+            : (live.tools ?? []).map((t) => t.name),
+          systemPromptPreview: live.systemPrompt
+            ? clampPreview(live.systemPrompt, 280)
+            : null,
+        };
+      } catch {
+        liveHud = null;
+      }
+    } catch {
+      /* host may be down */
+    }
+
+    if (!sessionPath && this.activeAgentId) {
+      sessionPath = (await this.tasks.getAgent(this.activeAgentId))?.sessionPath ?? null;
+    }
+    if (!sessionPath || !(await fileExists(sessionPath)) || !selectionEntryId) {
+      return {
+        selectionEntryId,
+        resolvedLeafId: selectionEntryId,
+        projection: {
+          leafId: null,
+          pathEntryIds: [],
+          effectiveEntryIds: [],
+          excludedPathEntryIds: [],
+          messages: [],
+          model: null,
+          thinkingLevel: null,
+          latestCompaction: null,
+          recoverability: {
+            exactFromJsonl: [],
+            unavailableFromJsonl: ["systemPrompt", "tools", "skills"],
+          },
+          diagnostics: [],
+        },
+        isLiveLeaf: false,
+        liveHud,
+      };
+    }
+
+    const fileSnapshot = await this.loadSessionSnapshot(sessionPath);
+    const snapshot = snapshotAtLeaf(fileSnapshot, liveLeafId ?? fileSnapshot.leafId);
+    const resolvedLeafId = resolveSessionMapLeaf(snapshot, selectionEntryId);
+    const projection = buildPiContextProjection(snapshot, resolvedLeafId);
+    // Truncate message bodies for IPC — detail pane expands short previews.
+    const messages = projection.messages.map((m) => ({
+      ...m,
+      text: clampPreview(m.text, 2000),
+      ...(m.thinking ? { thinking: clampPreview(m.thinking, 800) } : {}),
+    }));
+    return {
+      selectionEntryId,
+      resolvedLeafId,
+      projection: { ...projection, messages },
+      isLiveLeaf: Boolean(liveLeafId && resolvedLeafId === liveLeafId),
+      liveHud,
+    };
   }
 
   /**

@@ -36,6 +36,7 @@ import { Dialog } from "@/shared/ui/dialog";
 import { IconButton } from "@/shared/ui/icon-button";
 import { notifyError, notifySuccess } from "@/shared/ui/toast";
 import { BranchesFlowPanel } from "./branches-flow-panel";
+import { SessionMapPanel } from "./session-map-panel";
 import { ChatSidePanel } from "./chat-side-panel";
 import { scrollToTimelineEntry } from "./scroll-to-timeline-entry";
 import { ExtractSkillBanner } from "./extract-skill-banner";
@@ -97,6 +98,8 @@ export function AppShell(props: AppShellProps) {
   const [newTaskOpen, setNewTaskOpen] = createSignal(false);
   const [branchesOpen, setBranchesOpen] = createSignal(false);
   const [branchesRefresh, setBranchesRefresh] = createSignal(0);
+  const [sessionMapOpen, setSessionMapOpen] = createSignal(false);
+  const [sessionMapRefresh, setSessionMapRefresh] = createSignal(0);
   /** Suppress timeline auto-follow while Switch & view pins a message. */
   const [pinScrollEntryId, setPinScrollEntryId] = createSignal<string | null>(null);
   const [pendingEdit, setPendingEdit] = createSignal<PendingEdit | null>(null);
@@ -224,7 +227,14 @@ export function AppShell(props: AppShellProps) {
       if (event.key.toLowerCase() !== "n") return;
       // Don't steal chord from inputs that expect ctrl/meta+n (rare); only block
       // when a dialog already owns the flow.
-      if (newTaskOpen() || extractOpen() || reviewOpen() || skillsOpen() || branchesOpen()) {
+      if (
+        newTaskOpen() ||
+        extractOpen() ||
+        reviewOpen() ||
+        skillsOpen() ||
+        branchesOpen() ||
+        sessionMapOpen()
+      ) {
         return;
       }
       event.preventDefault();
@@ -384,6 +394,7 @@ export function AppShell(props: AppShellProps) {
   /** After a turn settles: one branches + inspector + git + HUD refresh (debounced HUD). */
   function schedulePostTurnRefresh(): void {
     setBranchesRefresh((value) => value + 1);
+    setSessionMapRefresh((value) => value + 1);
     setInspectorRefresh((value) => value + 1);
     const cwd = props.session.cwd();
     if (cwd) void window.piDesktop.workspace.git(cwd).then(setGit).catch(() => setGit(null));
@@ -479,6 +490,7 @@ export function AppShell(props: AppShellProps) {
     });
     if (ok) {
       setBranchesRefresh((value) => value + 1);
+      setSessionMapRefresh((value) => value + 1);
       refreshInspector();
     } else {
       notifyError("未能编辑 / 分叉该消息");
@@ -498,6 +510,7 @@ export function AppShell(props: AppShellProps) {
     });
     if (ok) {
       setBranchesRefresh((value) => value + 1);
+      setSessionMapRefresh((value) => value + 1);
       refreshInspector();
       notifySuccess(options?.summarize ? "已总结并切换分支" : "已切换到该分支");
       const scrollId = options?.summarize
@@ -811,11 +824,13 @@ export function AppShell(props: AppShellProps) {
                   loading={props.session.isCreatingSession()}
                   playbookTitle={playbookTitle()}
                   branchesOpen={branchesOpen()}
+                  sessionMapOpen={sessionMapOpen()}
                   canExportSession={Boolean(
                     props.session.activeAgent()?.sessionPath ||
                       props.session.hostState()?.sessionPath,
                   )}
                   canOpenBranches={props.session.isReady()}
+                  canOpenSessionMap={props.session.isReady()}
                   task={props.model.selectedTask()}
                   taskStatus={props.model.selectedWorkspaceTask()?.status}
                   status={props.session.status().runStatus}
@@ -825,6 +840,12 @@ export function AppShell(props: AppShellProps) {
                   onToggleBranches={() => {
                     setBranchesOpen((open) => {
                       if (!open) setBranchesRefresh((value) => value + 1);
+                      return !open;
+                    });
+                  }}
+                  onToggleSessionMap={() => {
+                    setSessionMapOpen((open) => {
+                      if (!open) setSessionMapRefresh((value) => value + 1);
                       return !open;
                     });
                   }}
@@ -1227,6 +1248,21 @@ export function AppShell(props: AppShellProps) {
         }}
         onGoto={(entryId) => {
           setBranchesOpen(false);
+          scrollToTimelineEntry(entryId);
+        }}
+      />
+
+      <SessionMapPanel
+        open={sessionMapOpen()}
+        busy={props.session.isBusy() || props.session.isCreatingSession()}
+        refreshToken={sessionMapRefresh()}
+        onClose={() => setSessionMapOpen(false)}
+        onSwitch={(navigateId, viewEntryId) => {
+          setSessionMapOpen(false);
+          void switchBranch(navigateId, { viewEntryId });
+        }}
+        onGoto={(entryId) => {
+          setSessionMapOpen(false);
           scrollToTimelineEntry(entryId);
         }}
       />

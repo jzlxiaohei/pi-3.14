@@ -11,7 +11,11 @@ import type {
   PiThinkingLevel,
   PiTurnResult,
 } from "@pi-3.14/model";
-import type { PiContextProjection, PiSessionAnalysis } from "@pi-3.14/session";
+import type {
+  PiContextProjection,
+  PiSessionAnalysis,
+  PiSessionDiagnostic,
+} from "@pi-3.14/session";
 
 export type {
   PiLiveInspectSnapshot,
@@ -336,6 +340,16 @@ export type PersonalSkillWriteResult =
   | { ok: true; slug: string; skillPath: string; skillsDir: string }
   | { ok: false; error: string };
 
+/** One skill discovered under ~/.pi/agent/skills (Templates / Paths pickers). */
+export type PersonalSkillInfo = {
+  /** Skill name used by PI / slash commands (frontmatter `name` or folder slug). */
+  name: string;
+  description?: string;
+  /** Folder name under ~/.pi/agent/skills */
+  slug: string;
+  skillPath: string;
+};
+
 export type PiWorkspacePickResult =
   | {
       cancelled: true;
@@ -497,6 +511,83 @@ export type PiSessionInspectResult = {
   branchTree: PiBranchTreeNode[];
   branchSpine: PiBranchSpineView;
   branchFlow: PiBranchFlowGraph;
+};
+
+/** Session Map structure density (spec session-map-v1). */
+export type SessionMapDensity = "turn" | "entry";
+
+export type SessionMapStructureNode = {
+  id: string;
+  /** Entry used for selection / navigate (user id for turn nodes). */
+  entryId: string;
+  kind:
+    | "turn"
+    | "user"
+    | "assistant"
+    | "toolResult"
+    | "compaction"
+    | "branchSummary"
+    | "customMessage"
+    | "metadata"
+    | "unknown";
+  label: string;
+  preview: string;
+  subtitle?: string;
+  timestamp: string | null;
+  onActivePath: boolean;
+  isFork: boolean;
+  childCount: number;
+  memberEntryIds?: string[];
+  assistantCount?: number;
+  toolCount?: number;
+  metaCount?: number;
+  hasError?: boolean;
+};
+
+export type SessionMapStructureEdge = {
+  id: string;
+  source: string;
+  target: string;
+  onActivePath: boolean;
+};
+
+export type SessionMapStructureGraph = {
+  nodes: SessionMapStructureNode[];
+  edges: SessionMapStructureEdge[];
+  density: SessionMapDensity;
+};
+
+export type PiSessionMapSnapshot = {
+  sessionId: string | null;
+  sessionPath: string | null;
+  liveLeafId: string | null;
+  /** Prebuilt turn + entry graphs so density toggle needs no second IPC for structure. */
+  turn: SessionMapStructureGraph;
+  entry: SessionMapStructureGraph;
+  analysis: {
+    branchPointCount: number;
+    entryCount: number;
+    messageCount: number;
+    compactionCount: number;
+  };
+  diagnostics: PiSessionDiagnostic[];
+};
+
+export type PiSessionMapContextRequest = {
+  selectionEntryId: string;
+};
+
+export type PiSessionMapContextResult = {
+  selectionEntryId: string;
+  resolvedLeafId: string;
+  projection: PiContextProjection;
+  isLiveLeaf: boolean;
+  /** Light live fields when host is ready (names only). */
+  liveHud: {
+    skillNames: string[];
+    toolNames: string[];
+    systemPromptPreview: string | null;
+  } | null;
 };
 
 export type PiSessionNavigateRequest = {
